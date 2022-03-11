@@ -1,19 +1,19 @@
 #include <cstdio>
 #include <cstdlib>
+#include <string>
+#include <cassert>
 
-void ReadSim(char *filename, int nInputs, char **pValues, int &nBPatterns) {
+void ReadSim(std::string filename, int nInputs, char **pValues, int &nBPatterns) {
   FILE *pFile;
-  pFile = fopen (filename, "rb");
+  pFile = fopen (filename.c_str(), "rb");
   fseek(pFile, 0, SEEK_END);
   int size = ftell(pFile);
   rewind(pFile);
   nBPatterns = size / nInputs;
-  printf("%d bytes, %d patterns\n", size, nBPatterns * 8);
-
   for(int i = 0; i < nInputs; i++) {
     pValues[i] = (char *)malloc(nBPatterns);
-    fread(pValues[i], 1, nBPatterns, pFile);
+    int r = fread(pValues[i], 1, nBPatterns, pFile);
+    assert(r == nBPatterns);
   }
-
   fclose(pFile);
 }
