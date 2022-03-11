@@ -12,10 +12,10 @@ extern void ReadBlifHeader(std::ifstream &f, std::string &modulename, std::vecto
 extern void ReadSim(std::string filename, int nInputs, char **pBPats, int &nBpatterns);
 extern int ReadBlifFuncs(std::ifstream &f, int nGroupSize, std::vector<std::string> &LUTInputs, std::vector<std::string> &LUTOutputs, std::vector<std::vector<int> > &onsets);
 
-extern void GeneratePla(std::string filename, std::vector<std::vector<int> > onsets, std::vector<char *> pBPats, int nBPats, int rarity);
+extern void GeneratePla(std::string filename, std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity);
 extern void ReadPla(std::string filename, std::vector<std::vector<std::string> > &onsets);
 
-void RunEspresso(std::vector<std::vector<int> > onsets, std::vector<char *> pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets) {
+void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets) {
   std::string planame = "test.pla";
   GeneratePla(planame, onsets, pBPats, nBPats, rarity);
   std::string planame2 = planame + ".esp.pla";

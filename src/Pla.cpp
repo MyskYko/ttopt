@@ -6,7 +6,7 @@
 
 extern std::string BinaryToString(int bin, int size);
 
-void GeneratePla(std::string filename, std::vector<std::vector<int> > onsets, std::vector<char *> pBPats, int nBPats, int rarity) {
+void GeneratePla(std::string filename, std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity) {
   int LUTSize = pBPats.size();
   int nOutputs = onsets.size();
   std::vector<int> careset;
