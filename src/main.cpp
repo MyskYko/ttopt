@@ -12,8 +12,18 @@ extern void ReadBlifHeader(std::ifstream &f, std::string &modulename, std::vecto
 extern void ReadSim(std::string filename, int nInputs, char **pBPats, int &nBpatterns);
 extern int ReadBlifFuncs(std::ifstream &f, int nGroupSize, std::vector<std::string> &LUTInputs, std::vector<std::string> &LUTOutputs, std::vector<std::vector<int> > &onsets);
 
-extern void GeneratePla(std::string filename, std::vector<std::vector<int> > onset, std::vector<char *> pBPats, int nBPats, int rarity);
-extern void ReadPla(std::string filename, int nOutputs, std::vector<std::vector<std::string> > &onsets);
+extern void GeneratePla(std::string filename, std::vector<std::vector<int> > onsets, std::vector<char *> pBPats, int nBPats, int rarity);
+extern void ReadPla(std::string filename, std::vector<std::vector<std::string> > &onsets);
+
+void RunEspresso(std::vector<std::vector<int> > onsets, std::vector<char *> pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets) {
+  std::string planame = "test.pla";
+  GeneratePla(planame, onsets, pBPats, nBPats, rarity);
+  std::string planame2 = planame + ".esp.pla";
+  std::string cmd = "espresso " + planame + " > " + planame2;
+  int r = std::system(cmd.c_str());
+  assert(r == 0);
+  ReadPla(planame2, optimized_onsets);
+}
 
 int main(int argc, char **argv) {
   std::string ifname = argv[1];
@@ -59,14 +69,8 @@ int main(int argc, char **argv) {
       pBPatsSubset.push_back(pBPats[input2index[LUTInputs[i]]]);
     }
 
-    std::string planame = "test.pla";
-    GeneratePla(planame, onsets, pBPatsSubset, nBPats, rarity);
-    std::string planame2 = planame + ".esp.pla";
-    std::string cmd = "espresso " + planame + " > " + planame2;
-    int r = std::system(cmd.c_str());
-    assert(r == 0);
     std::vector<std::vector<std::string> > optimized_onsets;
-    ReadPla(planame2, nGroupSize, optimized_onsets);
+    RunEspresso(onsets, pBPatsSubset, nBPats, rarity, optimized_onsets);
     
     for(int j = 0; j < nGroupSize; j++) {
       of << ".names";

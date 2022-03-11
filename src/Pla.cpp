@@ -49,17 +49,28 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > onsets, st
   f.close();
 }
 
-void ReadPla(std::string filename, int nOutputs, std::vector<std::vector<std::string> > &onsets) {
+void ReadPla(std::string filename, std::vector<std::vector<std::string> > &onsets) {
   onsets.clear();
-  onsets.resize(nOutputs);
   std::ifstream f(filename);
   std::string str;
   while(std::getline(f, str)) {
+    if(str.length() > 2 && str.substr(0, 2) == ".i") {
+      break;
+    }
+  }
+  int nInputs = std::stoi(str.substr(3));
+  while(std::getline(f, str)) {
+    if(str.length() > 2 && str.substr(0, 2) == ".o") {
+      break;
+    }
+  }
+  int nOutputs = std::stoi(str.substr(3));
+  onsets.resize(nOutputs);
+  while(std::getline(f, str)) {
     if(str.length() > 0 && (str[0] == '0' || str[0] == '1' || str[0] == '-')) {
-      int pos = str.find(' ');
-      std::string pat = str.substr(0, pos);
+      std::string pat = str.substr(0, nInputs);
       for(int j = 0; j < nOutputs; j++) {
-        if(str[pos+1+j] == '1') {
+        if(str[nInputs+1+j] == '1') {
           onsets[j].push_back(pat);
         }
       }
