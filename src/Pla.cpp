@@ -10,7 +10,11 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > const &ons
   int LUTSize = pBPats.size();
   int nOutputs = onsets.size();
   std::vector<int> careset;
-  {
+  if(rarity == 0) {
+    for(int pat = 0; pat < (1 << LUTSize); pat++) {
+      careset.push_back(pat);
+    }
+  } else {
     std::vector<int> count(1 << LUTSize);
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
