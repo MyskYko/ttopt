@@ -56,12 +56,13 @@ public:
     return (t[index] >> pos) & ones[nInputs - input];
   }
 
-  void CountBDDNodesOne(std::vector<int> &vNodes, int node, int input) {
+  int CountBDDNodesOne(std::vector<int> &vNodes, int node, int input) {
     if(nInputs - input > 5) {
       int nScope = 1 << (nInputs - input - 5);
       bool fZero = true;
       bool fOne = true;
       uint one = ones[5];
+      // vertical procedure begin
       std::list<int> nodes;
       for(int node2: vNodes) {
         nodes.push_back(node2 << 1);
@@ -88,39 +89,57 @@ public:
           break;
         }
       }
-      if(!fZero && !fOne && nodes.empty()) {
-        vNodes.push_back(node);
+      if(fZero) {
+        return -1;
       }
+      if(fOne) {
+        return -2;
+      }
+      if(!nodes.empty()) {
+        return *(nodes.begin());
+      }
+      // vertical procedure end
     } else {
       uint one = ones[nInputs - input];
       uint value = CountBDDNodesOneGetValue(vNodes, node, input);
-      if(value == 0 || value == one) {
-        return;
+      if(value == 0) {
+        return -1;
+      }
+      if(value == one) {
+        return -2;
       }
       for(int node2: vNodes) {
         uint value2 = CountBDDNodesOneGetValue(vNodes, node2, input);
-        if(value2 == value || (value2 ^ one) == value) {
-          return;
+        if(value2 == value) {
+          return node2 << 1;
+        }
+        if((value2 ^ one) == value) {
+          return node2 << 1 ^ 1;
         }
       }
-      vNodes.push_back(node);
     }
+    vNodes.push_back(node);
+    return node << 1;
   }
   
   int CountBDDNodes() {
     std::vector<std::vector<int> > vvNodes(nInputs);
+    std::vector<std::vector<int> > vvNodesRedundant(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       CountBDDNodesOne(vvNodes[0], i, 0);
     }
     for(int i = 1; i < nInputs; i++) {
       for(int node: vvNodes[i-1]) {
-        CountBDDNodesOne(vvNodes[i], node << 1, i);
-        CountBDDNodesOne(vvNodes[i], (node << 1) + 1, i);
+        int cof0 = CountBDDNodesOne(vvNodes[i], node << 1, i);
+        int cof1 = CountBDDNodesOne(vvNodes[i], (node << 1) ^ 1, i);
+        if(cof0 == cof1) {
+          vvNodesRedundant[i-1].push_back(node);
+        }
       }
     }
-    int count = 0;
-    for(auto vNodes: vvNodes) {
-      count += vNodes.size();
+    int count = 1; // the const node
+    for(int i = 0; i < nInputs; i++) {
+      count += vvNodes[i].size() - vvNodesRedundant[i].size();
     }
     return count;
   }
