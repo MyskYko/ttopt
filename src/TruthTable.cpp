@@ -50,9 +50,6 @@ public:
   int BDDGetValue(int node, int var) {
     assert(nInputs - var <= 5);
     int index = node >> (var + 5 - nInputs);
-    if(nInputs - var == 5) {
-      return t[index];
-    }
     int pos = (node % (1 << (var + 5 - nInputs))) << (nInputs - var);
     return (t[index] >> pos) & ones[nInputs - var];
   }
@@ -145,6 +142,22 @@ public:
     return count;
   }
 
+  bool Imply(int node1, int node2, int var) {
+    if(nInputs - var > 5) {
+      int nScope = 1 << (nInputs - var - 5);
+      for(int i = 0; i < nScope; i++) {
+        if(t[nScope * node1 + i] & ~t[nScope * node2 + i]) {
+          return 0;
+        }
+      }
+      return 1;
+    } else {
+      uint value1 = BDDGetValue(node1, var);
+      uint value2 = BDDGetValue(node2, var);
+      return !(value1 & (value2 ^ ones[nInputs - var]));
+    }
+  }
+
   int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, std::vector<std::vector<int> > &vvNodeIDs, int node, int var, int &nNodes, std::ofstream &f, std::string const &prefix) {
     if(nInputs - var > 5) {
       int nScope = 1 << (nInputs - var - 5);
@@ -219,10 +232,11 @@ public:
     int cof1id = cof1 >> 1;
     bool cof0c = cof0 & 1;
     bool cof1c = cof1 & 1;
+    bool imp01 = Imply(node << 1, (node << 1) ^ 1, var + 1);
+    bool imp10 = Imply((node << 1) ^ 1, node << 1, var + 1);
     f << ".names " << prefix << "v" << var << " " << prefix << "n" << cof0id << " " << prefix << "n" << cof1id << " " << prefix << "n" << nNodes << std::endl;
-    f << "0" << !cof0c << "- 1" << std::endl;
-    f << "1-" << !cof1c << " 1" << std::endl;
-    // TODO: MUX optimization
+    f << (imp01? "-" : "0") << !cof0c << "- 1" << std::endl;
+    f << (imp10? "--" : "1-") << !cof1c << " 1" << std::endl;
     vvNodes[var].push_back(node);
     vvNodeIDs[var].push_back(nNodes);
     return (nNodes++) << 1;
