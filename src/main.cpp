@@ -9,16 +9,16 @@
 #include <cassert>
 
 extern void ReadBlifHeader(std::ifstream &f, std::string &modulename, std::vector<std::string> &inputs, std::vector<std::string> &outputs);
-extern void ReadSim(std::string filename, int nInputs, char **pBPats, int &nBpatterns);
+extern void ReadSim(std::string filename, int nInputs, std::vector<char *> &vpBPats, int &nBpatterns);
 extern int ReadBlifFuncs(std::ifstream &f, int nGroupSize, std::vector<std::string> &LUTInputs, std::vector<std::string> &LUTOutputs, std::vector<std::vector<int> > &onsets);
-extern void GeneratePla(std::string filename, std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity);
+extern void GeneratePla(std::string filename, std::vector<std::vector<int> > const &onsets, std::vector<char *> const &vpBPats, int nBPats, int rarity);
 extern void ReadPla(std::string filename, std::vector<std::vector<std::string> > &onsets);
 
-extern void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets);
+extern void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &vpBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f);
 
-void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
+void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &vpBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   std::string planame = "test.pla";
-  GeneratePla(planame, onsets, pBPats, nBPats, rarity);
+  GeneratePla(planame, onsets, vpBPats, nBPats, rarity);
   std::string planame2 = planame + ".esp.pla";
   std::string cmd = "espresso " + planame + " > " + planame2;
   int r = std::system(cmd.c_str());
@@ -39,10 +39,16 @@ void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char 
 
 int main(int argc, char **argv) {
   std::string ifname = argv[1];
-  std::string simname = argv[2];
+  std::string simname;
+  if(argc > 2) {
+    simname = argv[2];
+  }
   std::string ofname = ifname + ".opt.blif";
   int nGroupSize  = 3;
   int rarity = 1;
+  if(simname.empty()) {
+    rarity = 0;
+  }
 
   std::ifstream f(ifname);
   std::ofstream of(ofname);
@@ -68,31 +74,34 @@ int main(int argc, char **argv) {
   }
   of << std::endl;
 
-  char **pBPats = (char **)malloc(sizeof(char *) * nInputs);
+  std::vector<char *> vpBPats;
   int nBPats;
-  ReadSim(simname, nInputs, pBPats, nBPats);
+  if(!simname.empty()) {
+    ReadSim(simname, nInputs, vpBPats, nBPats);
+  }
 
   std::vector<std::string> LUTInputs;
   std::vector<std::string> LUTOutputs;
   std::vector<std::vector<int> > onsets;
   while(ReadBlifFuncs(f, nGroupSize, LUTInputs, LUTOutputs, onsets)) {
-    std::vector<char *> pBPatsSubset(LUTInputs.size());
-    for(uint i = 0; i < LUTInputs.size(); i++) {
-      pBPatsSubset[i] = pBPats[input2index[LUTInputs[i]]];
+    std::vector<char *> vpBPatsSubset(LUTInputs.size());
+    if(!simname.empty()) {
+      for(uint i = 0; i < LUTInputs.size(); i++) {
+        vpBPatsSubset[i] = vpBPats[input2index[LUTInputs[i]]];
+      }
     }
 
-
-    // GeneratePla("test.pla", onsets, pBPatsSubset, nBPats, 0);
-    // TTTest(onsets, pBPatsSubset, nBPats, rarity, optimized_onsets);
-    RunEspresso(onsets, pBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+    //GeneratePla("test.pla", onsets, vpBPatsSubset, nBPats, 0);
+    //TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+    RunEspresso(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
   }
 
   of << ".end" << std::endl;
 
-  for(int i = 0; i < nInputs; i++) {
-    free(pBPats[i]);
+  for(auto pBPats: vpBPats) {
+    free(pBPats);
   }
-  free(pBPats);
+  vpBPats.clear();
 
   return 0;
 }
