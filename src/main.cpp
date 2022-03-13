@@ -11,18 +11,30 @@
 extern void ReadBlifHeader(std::ifstream &f, std::string &modulename, std::vector<std::string> &inputs, std::vector<std::string> &outputs);
 extern void ReadSim(std::string filename, int nInputs, char **pBPats, int &nBpatterns);
 extern int ReadBlifFuncs(std::ifstream &f, int nGroupSize, std::vector<std::string> &LUTInputs, std::vector<std::string> &LUTOutputs, std::vector<std::vector<int> > &onsets);
-
 extern void GeneratePla(std::string filename, std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity);
 extern void ReadPla(std::string filename, std::vector<std::vector<std::string> > &onsets);
 
-void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets) {
+extern void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::vector<std::string> > &optimized_onsets);
+
+void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   std::string planame = "test.pla";
   GeneratePla(planame, onsets, pBPats, nBPats, rarity);
   std::string planame2 = planame + ".esp.pla";
   std::string cmd = "espresso " + planame + " > " + planame2;
   int r = std::system(cmd.c_str());
   assert(r == 0);
-  ReadPla(planame2, optimized_onsets);
+  std::vector<std::vector<std::string> > onsets2;
+  ReadPla(planame2, onsets2);
+  for(uint i = 0; i < outputs.size(); i++) {
+    f << ".names";
+    for(auto input: inputs) {
+      f << " " << input;
+    }
+    f << " " << outputs[i] << std::endl;
+    for(auto pat: onsets2[i]) {
+      f << pat << " 1" << std::endl;
+    }
+  }
 }
 
 int main(int argc, char **argv) {
@@ -64,24 +76,15 @@ int main(int argc, char **argv) {
   std::vector<std::string> LUTOutputs;
   std::vector<std::vector<int> > onsets;
   while(ReadBlifFuncs(f, nGroupSize, LUTInputs, LUTOutputs, onsets)) {
-    std::vector<char *> pBPatsSubset;
+    std::vector<char *> pBPatsSubset(LUTInputs.size());
     for(uint i = 0; i < LUTInputs.size(); i++) {
-      pBPatsSubset.push_back(pBPats[input2index[LUTInputs[i]]]);
+      pBPatsSubset[i] = pBPats[input2index[LUTInputs[i]]];
     }
 
-    std::vector<std::vector<std::string> > optimized_onsets;
-    RunEspresso(onsets, pBPatsSubset, nBPats, rarity, optimized_onsets);
-    
-    for(int j = 0; j < nGroupSize; j++) {
-      of << ".names";
-      for(auto input: LUTInputs) {
-        of << " " << input;
-      }
-      of << " " << LUTOutputs[j] << std::endl;
-      for(auto onset: optimized_onsets[j]) {
-        of << onset << " 1" << std::endl;
-      }
-    }
+
+    // GeneratePla("test.pla", onsets, pBPatsSubset, nBPats, 0);
+    // TTTest(onsets, pBPatsSubset, nBPats, rarity, optimized_onsets);
+    RunEspresso(onsets, pBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
   }
 
   of << ".end" << std::endl;
