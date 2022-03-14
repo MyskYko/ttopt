@@ -169,10 +169,10 @@ public:
       int nScope = 1 << (nInputs - lev - 5);
       for(int i = 0; i < nScope; i++) {
         if(t[nScope * index1 + i] & ~t[nScope * index2 + i]) {
-          return 0;
+          return false;
         }
       }
-      return 1;
+      return true;
     }
     return !(BDDGetValue(index1, lev) & (BDDGetValue(index2, lev) ^ ones[nInputs - lev]));
   }
