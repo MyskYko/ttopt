@@ -4,6 +4,7 @@
 #include <vector>
 #include <list>
 #include <algorithm>
+#include <numeric>
 #include <cassert>
 
 extern std::string BinaryToString(int bin, int size);
@@ -14,8 +15,10 @@ public:
   int nSize;
   int nOutputs;
   std::vector<uint> t;
+  std::vector<int> vLevels;
 
   static const uint ones[];
+  static const uint sieve[];
 
   TT(std::vector<std::vector<int> > const &onsets, int nInputs): nInputs(nInputs) {
     assert(nInputs >= 5);
@@ -29,6 +32,8 @@ public:
         t[index + nSize * i] |= 1 << pos;
       }
     }
+    vLevels.resize(nInputs);
+    std::iota(vLevels.begin(), vLevels.end(), 0);
   }
   
   void GeneratePla(std::string filename) {
@@ -47,16 +52,16 @@ public:
     }
   }
 
-  int BDDGetValue(int node, int var) {
-    assert(nInputs - var <= 5);
-    int index = node >> (var + 5 - nInputs);
-    int pos = (node % (1 << (var + 5 - nInputs))) << (nInputs - var);
-    return (t[index] >> pos) & ones[nInputs - var];
+  int BDDGetValue(int node, int lev) {
+    assert(nInputs - lev <= 5);
+    int index = node >> (lev + 5 - nInputs);
+    int pos = (node % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
+    return (t[index] >> pos) & ones[nInputs - lev];
   }
 
-  int CountBDDNodesOne(std::vector<int> &vNodes, int node, int var) {
-    if(nInputs - var > 5) {
-      int nScope = 1 << (nInputs - var - 5);
+  int CountBDDNodesOne(std::vector<int> &vNodes, int node, int lev) {
+    if(nInputs - lev > 5) {
+      int nScope = 1 << (nInputs - lev - 5);
       bool fZero = true;
       bool fOne = true;
       uint one = ones[5];
@@ -98,8 +103,8 @@ public:
       }
       // vertical procedure end
     } else {
-      uint one = ones[nInputs - var];
-      uint value = BDDGetValue(node, var);
+      uint one = ones[nInputs - lev];
+      uint value = BDDGetValue(node, lev);
       if(value == 0) {
         return -1;
       }
@@ -107,7 +112,7 @@ public:
         return -2;
       }
       for(int node2: vNodes) {
-        uint value2 = BDDGetValue(node2, var);
+        uint value2 = BDDGetValue(node2, lev);
         if(value2 == value) {
           return node2 << 1;
         }
@@ -142,9 +147,9 @@ public:
     return count;
   }
 
-  bool Imply(int node1, int node2, int var) {
-    if(nInputs - var > 5) {
-      int nScope = 1 << (nInputs - var - 5);
+  bool Imply(int node1, int node2, int lev) {
+    if(nInputs - lev > 5) {
+      int nScope = 1 << (nInputs - lev - 5);
       for(int i = 0; i < nScope; i++) {
         if(t[nScope * node1 + i] & ~t[nScope * node2 + i]) {
           return 0;
@@ -152,21 +157,21 @@ public:
       }
       return 1;
     } else {
-      uint value1 = BDDGetValue(node1, var);
-      uint value2 = BDDGetValue(node2, var);
-      return !(value1 & (value2 ^ ones[nInputs - var]));
+      uint value1 = BDDGetValue(node1, lev);
+      uint value2 = BDDGetValue(node2, lev);
+      return !(value1 & (value2 ^ ones[nInputs - lev]));
     }
   }
 
-  int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, std::vector<std::vector<int> > &vvNodeIDs, int node, int var, int &nNodes, std::ofstream &f, std::string const &prefix) {
-    if(nInputs - var > 5) {
-      int nScope = 1 << (nInputs - var - 5);
+  int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, std::vector<std::vector<int> > &vvNodeIDs, int node, int lev, int &nNodes, std::ofstream &f, std::string const &prefix) {
+    if(nInputs - lev > 5) {
+      int nScope = 1 << (nInputs - lev - 5);
       bool fZero = true;
       bool fOne = true;
       uint one = ones[5];
       // vertical procedure begin
       std::list<int> nodes;
-      for(int node2: vvNodes[var]) {
+      for(int node2: vvNodes[lev]) {
         nodes.push_back(node2 << 1);
         nodes.push_back((node2 << 1) ^ 1);
       }
@@ -198,33 +203,33 @@ public:
         return 1;
       }
       if(!nodes.empty()) {
-        auto it = std::lower_bound(vvNodes[var].begin(), vvNodes[var].end(), nodes.front() >> 1);
-        int i = it - vvNodes[var].begin();
-        return (vvNodeIDs[var][i] << 1) ^ (nodes.front() & 1);
+        auto it = std::lower_bound(vvNodes[lev].begin(), vvNodes[lev].end(), nodes.front() >> 1);
+        int i = it - vvNodes[lev].begin();
+        return (vvNodeIDs[lev][i] << 1) ^ (nodes.front() & 1);
       }
       // vertical procedure end
     } else {
-      uint one = ones[nInputs - var];
-      uint value = BDDGetValue(node, var);
+      uint one = ones[nInputs - lev];
+      uint value = BDDGetValue(node, lev);
       if(value == 0) {
         return 0;
       }
       if(value == one) {
         return 1;
       }
-      for(uint i = 0; i < vvNodes[var].size(); i++) {
-        int node2 = vvNodes[var][i];
-        uint value2 = BDDGetValue(node2, var);
+      for(uint i = 0; i < vvNodes[lev].size(); i++) {
+        int node2 = vvNodes[lev][i];
+        uint value2 = BDDGetValue(node2, lev);
         if(value2 == value) {
-          return vvNodeIDs[var][i] << 1;
+          return vvNodeIDs[lev][i] << 1;
         }
         if((value2 ^ one) == value) {
-          return (vvNodeIDs[var][i] << 1) ^ 1;
+          return (vvNodeIDs[lev][i] << 1) ^ 1;
         }
       }
     }
-    int cof0 = GenerateBDDBlifRec(vvNodes, vvNodeIDs, node << 1, var + 1, nNodes, f, prefix);
-    int cof1 = GenerateBDDBlifRec(vvNodes, vvNodeIDs, (node << 1) ^ 1, var + 1, nNodes, f, prefix);
+    int cof0 = GenerateBDDBlifRec(vvNodes, vvNodeIDs, node << 1, lev + 1, nNodes, f, prefix);
+    int cof1 = GenerateBDDBlifRec(vvNodes, vvNodeIDs, (node << 1) ^ 1, lev + 1, nNodes, f, prefix);
     if(cof0 == cof1) {
       return cof0;
     }
@@ -232,13 +237,13 @@ public:
     int cof1id = cof1 >> 1;
     bool cof0c = cof0 & 1;
     bool cof1c = cof1 & 1;
-    bool imp01 = Imply(node << 1, (node << 1) ^ 1, var + 1);
-    bool imp10 = Imply((node << 1) ^ 1, node << 1, var + 1);
-    f << ".names " << prefix << "v" << var << " " << prefix << "n" << cof0id << " " << prefix << "n" << cof1id << " " << prefix << "n" << nNodes << std::endl;
+    bool imp01 = Imply(node << 1, (node << 1) ^ 1, lev + 1);
+    bool imp10 = Imply((node << 1) ^ 1, node << 1, lev + 1);
+    f << ".names " << prefix << "v" << lev << " " << prefix << "n" << cof0id << " " << prefix << "n" << cof1id << " " << prefix << "n" << nNodes << std::endl;
     f << (imp01? "-" : "0") << !cof0c << "- 1" << std::endl;
     f << (imp10? "--" : "1-") << !cof1c << " 1" << std::endl;
-    vvNodes[var].push_back(node);
-    vvNodeIDs[var].push_back(nNodes);
+    vvNodes[lev].push_back(node);
+    vvNodeIDs[lev].push_back(nNodes);
     return (nNodes++) << 1;
   }
 
@@ -250,7 +255,7 @@ public:
     std::vector<int> vOutputs;
     f << ".names " << prefix << "n0" << std::endl;
     for(int i = 0; i < nInputs; i++) {
-      f << ".names " << inputs[i] << " " << prefix << "v" << i << std::endl;
+      f << ".names " << inputs[i] << " " << prefix << "v" << vLevels[i] << std::endl;
       f << "1 1" << std::endl;
     }
     for(int i = 0; i < nOutputs; i++) {
@@ -259,6 +264,34 @@ public:
       bool c = node & 1;
       f << ".names " << prefix << "n" << id << " " << outputs[i] << std::endl;
       f << !c << " 1" << std::endl;
+    }
+  }
+
+  void SwapLevel(int lev) {
+    auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
+    auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
+    std::swap(*it0, *it1);
+    if(nInputs - lev > 6) {
+      int nScope = 1 << (nInputs - lev - 5 - 2);
+      for(int i = nScope; i < nSize * nOutputs; i += (nScope << 2)) {
+        for(int j = 0; j < nScope; j++) {
+          std::swap(t[i + j], t[i + nScope + j]);
+        }
+      }
+    } else if(nInputs - lev == 6) {
+      for(int i = 0; i < nSize * nOutputs; i += 2) {
+        t[i+1] ^= t[i] >> 16;
+        t[i] ^= t[i+1] << 16;
+        t[i+1] ^= t[i] >> 16;
+      }
+    } else {
+      for(int i = 0; i < nSize * nOutputs; i++) {
+        int d = (nInputs - lev - 2);
+        int shamt = 1 << d;
+        t[i] ^= (t[i] >> shamt) & sieve[d];
+        t[i] ^= (t[i] & sieve[d]) << shamt;
+        t[i] ^= (t[i] >> shamt) & sieve[d];
+      }
     }
   }
 };
@@ -270,10 +303,19 @@ const uint TT::ones[] = {0x00000001,
                          0x0000ffff,
                          0xffffffff};
 
+const uint TT::sieve[] = {0x22222222,
+                          0x0c0c0c0c,
+                          0x00f000f0,
+                          0x0000ff00};
+
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   TT tt(onsets, nInputs);
   //tt.GeneratePla("test2.pla");
+  std::cout << tt.CountBDDNodes() << std::endl;
+  for(int i = 0; i < 100; i++) {
+    tt.SwapLevel(rand() % (nInputs-1));
+  }
   std::cout << tt.CountBDDNodes() << std::endl;
   tt.GenerateBDDBlif(inputs, outputs, f);
 }
