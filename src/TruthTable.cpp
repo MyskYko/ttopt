@@ -63,29 +63,15 @@ public:
 
   int BDDFind(int index, int lev) {
     if(nInputs - lev > 5) {
-      // vertical search implementation
       int nScope = 1 << (nInputs - lev - 5);
       bool fZero = true;
       bool fOne = true;
       uint one = ones[5];
-      std::list<int> indices;
-      for(int index2: vvIndices[lev]) {
-        indices.push_back(index2 << 1);
-        indices.push_back((index2 << 1) ^ 1);
-      }
       for(int i = 0; i < nScope; i++) {
         uint value = t[nScope * index + i];
         fZero &= value == 0;
         fOne &= value == one;
-        for(auto it = indices.begin(); it != indices.end(); it++) {
-          int index2 = *it >> 1;
-          uint value2 = t[nScope * index2 + i];
-          if((!(*it & 1) && value != value2) || ((*it & 1) && value != ~value2)) {
-            it = indices.erase(it);
-            it--;
-          }
-        }
-        if(!fZero && !fOne && indices.empty()) {
+        if(!fZero && !fOne) {
           break;
         }
       }
@@ -95,8 +81,24 @@ public:
       if(fOne) {
         return -1;
       }
-      if(!indices.empty()) {
-        return indices.front();
+      for(int index2: vvIndices[lev]) {
+        bool fEq = true;
+        bool fCompl = true;
+        for(int i = 0; i < nScope; i++) {
+          uint value = t[nScope * index + i];
+          uint value2 = t[nScope * index2 + i];
+          fEq &= value == value2;
+          fCompl &= value == ~value2;
+          if(!fEq && !fCompl) {
+            break;
+          }
+        }
+        if(fEq) {
+          return index2 << 1;
+        }
+        if(fCompl) {
+          return (index2 << 1) ^ 1;
+        }
       }
     } else {
       uint one = ones[nInputs - lev];
