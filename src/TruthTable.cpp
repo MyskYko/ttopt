@@ -252,6 +252,55 @@ public:
       }
     }
   }
+
+  int ShiftReo() {
+    int best = CountBDDNodes();
+    std::list<int> vars(nInputs);
+    std::iota(vars.begin(), vars.end(), 0);
+    while(!vars.empty()) {
+      int maxvar = -1;
+      uint maxnodes = 0;
+      std::list<int>::iterator maxit;
+      for(auto it = vars.begin(); it != vars.end(); it++) {
+        if(vvIndices[vLevels[maxvar]].size() > maxnodes) {
+          maxnodes = vvIndices[vLevels[maxvar]].size();
+          maxvar = *it;
+          maxit = it;
+        }
+      }
+      if(maxvar == -1) {
+        break;
+      }
+      vars.erase(maxit);
+      auto bestt = t;
+      auto vLevelsBest = vLevels;
+      auto oldt = t;
+      auto vLevelsOld = vLevels;
+      for(int i = vLevels[maxvar]; i < nInputs - 1; i++) {
+        SwapLevel(i);
+        int count = CountBDDNodes();
+        if(best > count) {
+          best = count;
+          bestt = t;
+          vLevelsBest = vLevels;
+        }
+      }
+      t = oldt;
+      vLevels = vLevelsOld;
+      for(int i = vLevels[maxvar]-1; i >= 0; i--) {
+        SwapLevel(i);
+        int count = CountBDDNodes();
+        if(best > count) {
+          best = count;
+          bestt = t;
+          vLevelsBest = vLevels;
+        }
+      }
+      t = bestt;
+      vLevels = vLevelsBest;
+    }
+    return best;
+  }
 };
 
 const uint TT::ones[] = {0x00000001,
@@ -271,9 +320,7 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   TT tt(onsets, nInputs);
   //tt.GeneratePla("test2.pla");
   std::cout << tt.CountBDDNodes() << std::endl;
-  for(int i = 0; i < 100; i++) {
-    tt.SwapLevel(rand() % (nInputs-1));
-  }
+  tt.ShiftReo();
   std::cout << tt.CountBDDNodes() << std::endl;
   tt.GenerateBDDBlif(inputs, outputs, f);
 }
