@@ -171,11 +171,8 @@ public:
         }
       }
       return 1;
-    } else {
-      uint value1 = BDDGetValue(index1, lev);
-      uint value2 = BDDGetValue(index2, lev);
-      return !(value1 & (value2 ^ ones[nInputs - lev]));
     }
+    return !(BDDGetValue(index1, lev) & (BDDGetValue(index2, lev) ^ ones[nInputs - lev]));
   }
 
   int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
