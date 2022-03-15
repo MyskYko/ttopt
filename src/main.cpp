@@ -39,12 +39,12 @@ void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char 
 
 int main(int argc, char **argv) {
   std::string ifname = argv[1];
+  std::string ofname = ifname + ".opt.blif";
+  int nGroupSize  = 3;
   std::string simname;
   if(argc > 2) {
     simname = argv[2];
   }
-  std::string ofname = ifname + ".opt.blif";
-  int nGroupSize  = 3;
   int rarity = 1;
   if(simname.empty()) {
     rarity = 0;
@@ -91,9 +91,8 @@ int main(int argc, char **argv) {
       }
     }
 
-    //GeneratePla("test.pla", onsets, vpBPatsSubset, nBPats, 0);
-    //TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
-    RunEspresso(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+    TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+    //RunEspresso(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
   }
 
   of << ".end" << std::endl;
