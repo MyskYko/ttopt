@@ -23,11 +23,11 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > const &ons
   } else {
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
-        std::string str;
+        int pat = 0;
         for(auto pBPat: pBPats) {
-          str += ((pBPat[i] >> j) & 1) + '0';
+          pat <<= 1;
+          pat |= ((pBPat[i] >> j) & 1);
         }
-        int pat = std::stoi(str, 0, 2);
         count[pat]++;
         if(count[pat] == rarity) {
           careset.push_back(pat);
