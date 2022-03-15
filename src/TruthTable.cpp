@@ -5,6 +5,7 @@
 #include <list>
 #include <algorithm>
 #include <numeric>
+#include <random>
 #include <cassert>
 
 extern std::string BinaryToString(int bin, int size);
@@ -15,10 +16,12 @@ public:
   int nSize;
   int nOutputs;
   std::vector<uint> t;
+  std::vector<uint> caret;
 
   std::vector<std::vector<int> > vvIndices;
   std::vector<int> vLevels;
 
+  std::mt19937 rng;
   static const uint ones[];
   static const uint sieve[];
 
@@ -36,6 +39,26 @@ public:
     }
     vLevels.resize(nInputs);
     std::iota(vLevels.begin(), vLevels.end(), 0);
+  }
+
+  TT(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
+    caret.resize(nSize);
+    std::vector<int> count(1 << nInputs);
+    for(int i = 0; i < nBPats; i++) {
+      for(int j = 0; j < 8; j++) {
+        int pat = 0;
+        for(auto pBPat: pBPats) {
+          pat <<= 1;
+          pat |= ((pBPat[i] >> j) & 1);
+        }
+        count[pat]++;
+        if(count[pat] == rarity) {
+          int index = pat / 32;
+          int pos = pat % 32;
+          caret[index + nSize * i] |= 1 << pos;
+        }
+      }
+    }
   }
   
   void GeneratePla(std::string filename) {
@@ -255,7 +278,7 @@ public:
     }
   }
 
-  int ShiftReo() {
+  int SiftReo() {
     int best = CountBDDNodes();
     std::list<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
@@ -303,6 +326,44 @@ public:
     }
     return best;
   }
+
+  void Reo(std::vector<int> vLevelsNew) {
+    for(int i = 0; i < nInputs; i++) {
+      int var = std::find(vLevelsNew.begin(), vLevelsNew.end(), i) - vLevelsNew.begin();
+      int lev = vLevels[var];
+      if(lev < i) {
+        for(int j = lev; j < i; j++) {
+          SwapLevel(j);
+        }
+      } else if(lev > i) {
+        for(int j = lev-1; j >= i; j--) {
+          SwapLevel(j);
+        }
+      }
+    }
+    assert(vLevels == vLevelsNew);
+  }
+
+  int RandomSiftReo(int nRound) {
+    int best = SiftReo();
+    auto bestt = t;
+    auto vLevelsBest = vLevels;
+    for(int i = 0; i < nRound; i++) {
+      std::vector<int> vLevelsNew(nInputs);
+      std::iota(vLevelsNew.begin(), vLevelsNew.end(), 0);
+      std::shuffle(vLevelsNew.begin(), vLevelsNew.end(), rng);
+      Reo(vLevelsNew);
+      int r = SiftReo();
+      if(best > r) {
+        best = r;
+        bestt = t;
+        vLevelsBest = vLevels;
+      }
+    }
+    t = bestt;
+    vLevels = vLevelsBest;
+    return best;
+  }
 };
 
 const uint TT::ones[] = {0x00000001,
@@ -320,9 +381,7 @@ const uint TT::sieve[] = {0x22222222,
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   TT tt(onsets, nInputs);
-  //tt.GeneratePla("test2.pla");
-  std::cout << tt.CountBDDNodes() << std::endl;
-  tt.ShiftReo();
-  std::cout << tt.CountBDDNodes() << std::endl;
+  tt.RandomSiftReo(20);
   tt.GenerateBDDBlif(inputs, outputs, f);
+
 }
