@@ -10,12 +10,17 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > const &ons
   int LUTSize = pBPats.size();
   int nOutputs = onsets.size();
   std::vector<int> careset;
+  std::vector<int> count(1 << LUTSize);
   if(rarity == 0) {
-    for(int pat = 0; pat < (1 << LUTSize); pat++) {
-      careset.push_back(pat);
+    for(auto onset: onsets) {
+      for(int pat: onset) {
+        if(!count[pat]) {
+          careset.push_back(pat);
+          count[pat]++;
+        }
+      }
     }
   } else {
-    std::vector<int> count(1 << LUTSize);
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
         std::string str;
@@ -31,14 +36,14 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > const &ons
     }
   }
   
-  std::vector<int> count(1 << LUTSize);
+  std::vector<int> opats(1 << LUTSize);
   for(int i = 0; i < nOutputs; i++) {
     int pow10 = 1;
     for(int j = i; j < nOutputs-1; j++) {
       pow10 = pow10 * 10;
     }
     for(int pat: onsets[i]) {
-      count[pat] += pow10;
+      opats[pat] += pow10;
     }
   }
 
@@ -47,7 +52,7 @@ void GeneratePla(std::string filename, std::vector<std::vector<int> > const &ons
   f << ".o " << nOutputs << std::endl;
   f << ".type fr" << std::endl;
   for(int pat: careset) {
-    f << BinaryToString(pat, LUTSize) << " " << std::setfill('0') << std::setw(nOutputs) << count[pat] << std::endl;
+    f << BinaryToString(pat, LUTSize) << " " << std::setfill('0') << std::setw(nOutputs) << opats[pat] << std::endl;
   }
 
   f.close();
