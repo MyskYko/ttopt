@@ -13,28 +13,32 @@ extern std::string BinaryToString(int bin, int size);
 
 class TT {
 public:
+  typedef uint word;
+  const int ww = 32; // word width
+  const int lww = 5; // log word width
+
   int nInputs;
   int nSize;
   int nOutputs;
-  std::vector<uint> t;
+  std::vector<word> t;
 
   std::vector<std::vector<int> > vvIndices;
   std::vector<int> vLevels;
 
   std::mt19937 rng;
-  static const uint ones[];
-  static const uint sieve[];
+  static const word ones[];
+  static const word swapmask[];
 
   TT(std::vector<std::vector<int> > const &onsets, int nInputs): nInputs(nInputs) {
-    assert(nInputs >= 5);
-    nSize = 1 << (nInputs - 5);
+    assert(nInputs >= lww);
+    nSize = 1 << (nInputs - lww);
     nOutputs = onsets.size();
     t.resize(nSize * nOutputs);
     for(int i = 0; i < nOutputs; i++) {
       for(int pat: onsets[i]) {
-        int index = pat / 32;
-        int pos = pat % 32;
-        t[index + nSize * i] |= 1 << pos;
+        int index = pat / ww;
+        int pos = pat % ww;
+        t[nSize * i + index] |= 1 << pos;
       }
     }
     vLevels.resize(nInputs);
@@ -46,76 +50,67 @@ public:
     f << ".i " << nInputs << std::endl;
     f << ".o " << nOutputs << std::endl;
     for(int index = 0; index < nSize; index++) {
-      for(int pos = 0; pos < 32; pos++) {
-        int pat = (index << 5) + pos;
+      for(int pos = 0; pos < ww; pos++) {
+        int pat = (index << lww) + pos;
         f << BinaryToString(pat, nInputs) << " ";
         for(int i = 0; i < nOutputs; i++) {
-          f << (char)('0' + ((t[index + nSize * i] >> pos) & 1));
+          f << ((t[nSize * i + index] >> pos) & 1);
         }
         f << std::endl;
       }
     }
   }
 
-  uint GetValue(int index_lev, int lev) {
+  word GetValue(int index_lev, int lev) {
     assert(index_lev >= 0);
-    assert(nInputs - lev <= 5);
-    int index = index_lev >> (lev + 5 - nInputs);
-    int pos = (index_lev % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
-    return (t[index] >> pos) & ones[nInputs - lev];
+    assert(nInputs - lev <= lww);
+    int logwidth = nInputs - lev;
+    int index = index_lev >> (lww - logwidth);
+    int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
+    return (t[index] >> pos) & ones[logwidth];
   }
 
-  void SetValue(int index_lev, int lev, uint value) {
+  void SetValue(int index_lev, int lev, word value) {
     assert(index_lev >= 0);
-    assert(nInputs - lev <= 5);
-    int index = index_lev >> (lev + 5 - nInputs);
-    int pos = (index_lev % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
-    t[index] &= ~(ones[nInputs - lev] << pos);
+    assert(nInputs - lev <= lww);
+    int logwidth = nInputs - lev;
+    int index = index_lev >> (lww - logwidth);
+    int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
+    t[index] &= ~(ones[logwidth] << pos);
     t[index] ^= value << pos;
   }
 
   int BDDFind(int index, int lev) {
-    if(nInputs - lev > 5) {
-      int nScope = 1 << (nInputs - lev - 5);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
       bool fZero = true;
       bool fOne = true;
-      uint one = ones[5];
-      for(int i = 0; i < nScope; i++) {
-        uint value = t[nScope * index + i];
+      word one = ones[lww];
+      for(int i = 0; i < nScopeSize && (fZero || fOne); i++) {
+        word value = t[nScopeSize * index + i];
         fZero &= value == 0;
         fOne &= value == one;
-        if(!fZero && !fOne) {
-          break;
-        }
       }
-      if(fZero) {
-        return -2;
-      }
-      if(fOne) {
-        return -1;
+      if(fZero || fOne) {
+        return -2 ^ fOne;
       }
       for(int index2: vvIndices[lev]) {
         bool fEq = true;
         bool fCompl = true;
-        for(int i = 0; i < nScope; i++) {
-          uint value = t[nScope * index + i];
-          uint value2 = t[nScope * index2 + i];
+        for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+          word value = t[nScopeSize * index + i];
+          word value2 = t[nScopeSize * index2 + i];
           fEq &= value == value2;
           fCompl &= value == ~value2;
-          if(!fEq && !fCompl) {
-            break;
-          }
         }
-        if(fEq) {
-          return index2 << 1;
-        }
-        if(fCompl) {
-          return (index2 << 1) ^ 1;
+        if(fEq || fCompl) {
+          return (index2 << 1) ^ fCompl;
         }
       }
     } else {
-      uint one = ones[nInputs - lev];
-      uint value = GetValue(index, lev);
+      word one = ones[logwidth];
+      word value = GetValue(index, lev);
       if(value == 0) {
         return -2;
       }
@@ -123,7 +118,7 @@ public:
         return -1;
       }
       for(int index2: vvIndices[lev]) {
-        uint value2 = GetValue(index2, lev);
+        word value2 = GetValue(index2, lev);
         if(value2 == value) {
           return index2 << 1;
         }
@@ -135,7 +130,7 @@ public:
     return -3;
   }
 
-  int CountBDDNodesOne(int index, int lev) {
+  int BDDCountNodesOne(int index, int lev) {
     int r = BDDFind(index, lev);
     if(r >= -2) {
       return r;
@@ -144,17 +139,17 @@ public:
     return index << 1;
   }
   
-  int CountBDDNodes() {
+  int BDDCountNodes() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
     std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      CountBDDNodesOne(i, 0);
+      BDDCountNodesOne(i, 0);
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        int cof0 = CountBDDNodesOne(index << 1, i);
-        int cof1 = CountBDDNodesOne((index << 1) ^ 1, i);
+        int cof0 = BDDCountNodesOne(index << 1, i);
+        int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
         if(cof0 == cof1) {
           vvIndicesRedundant[i-1].push_back(index);
         }
@@ -178,19 +173,20 @@ public:
   }
 
   bool Imply(int index1, int index2, int lev) {
-    if(nInputs - lev > 5) {
-      int nScope = 1 << (nInputs - lev - 5);
-      for(int i = 0; i < nScope; i++) {
-        if(t[nScope * index1 + i] & ~t[nScope * index2 + i]) {
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        if(t[nScopeSize * index1 + i] & ~t[nScopeSize * index2 + i]) {
           return false;
         }
       }
       return true;
     }
-    return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[nInputs - lev]));
+    return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[logwidth]));
   }
 
-  int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
+  int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
     int r = BDDFind(index, lev);
     if(r >= 0) {
       auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
@@ -200,8 +196,8 @@ public:
     if(r >= -2) {
       return r + 2;
     }
-    int cof0 = GenerateBDDBlifRec(vvNodes, nNodes, index << 1, lev + 1, f, prefix);
-    int cof1 = GenerateBDDBlifRec(vvNodes, nNodes, (index << 1) ^ 1, lev + 1, f, prefix);
+    int cof0 = BDDGenerateBlifRec(vvNodes, nNodes, index << 1, lev + 1, f, prefix);
+    int cof1 = BDDGenerateBlifRec(vvNodes, nNodes, (index << 1) ^ 1, lev + 1, f, prefix);
     if(cof0 == cof1) {
       return cof0;
     }
@@ -219,7 +215,7 @@ public:
     return (nNodes++) << 1;
   }
 
-  void GenerateBDDBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
+  void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
     std::string prefix = outputs.front();
     int nNodes = 1; // const node
     vvIndices.clear();
@@ -232,7 +228,7 @@ public:
       f << "1 1" << std::endl;
     }
     for(int i = 0; i < nOutputs; i++) {
-      int node = GenerateBDDBlifRec(vvNodes, nNodes, i, 0, f, prefix);
+      int node = BDDGenerateBlifRec(vvNodes, nNodes, i, 0, f, prefix);
       int id = node >> 1;
       bool c = node & 1;
       f << ".names " << prefix << "n" << id << " " << outputs[i] << std::endl;
@@ -244,32 +240,32 @@ public:
     auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
     auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
     std::swap(*it0, *it1);
-    if(nInputs - lev > 6) {
-      int nScope = 1 << (nInputs - lev - 5 - 2);
-      for(int i = nScope; i < nSize * nOutputs; i += (nScope << 2)) {
-        for(int j = 0; j < nScope; j++) {
-          std::swap(t[i + j], t[i + nScope + j]);
+    if(nInputs - lev - 1 > lww) {
+      int nScopeSize = 1 << (nInputs - lev - 2 - lww);
+      for(int i = nScopeSize; i < nSize * nOutputs; i += (nScopeSize << 2)) {
+        for(int j = 0; j < nScopeSize; j++) {
+          std::swap(t[i + j], t[i + nScopeSize + j]);
         }
       }
-    } else if(nInputs - lev == 6) {
+    } else if(nInputs - lev - 1 == lww) {
       for(int i = 0; i < nSize * nOutputs; i += 2) {
-        t[i+1] ^= t[i] >> 16;
-        t[i] ^= t[i+1] << 16;
-        t[i+1] ^= t[i] >> 16;
+        t[i+1] ^= t[i] >> (ww / 2);
+        t[i] ^= t[i+1] << (ww / 2);
+        t[i+1] ^= t[i] >> (ww / 2);
       }
     } else {
       for(int i = 0; i < nSize * nOutputs; i++) {
-        int d = (nInputs - lev - 2);
+        int d = nInputs - lev - 2;
         int shamt = 1 << d;
-        t[i] ^= (t[i] >> shamt) & sieve[d];
-        t[i] ^= (t[i] & sieve[d]) << shamt;
-        t[i] ^= (t[i] >> shamt) & sieve[d];
+        t[i] ^= (t[i] >> shamt) & swapmask[d];
+        t[i] ^= (t[i] & swapmask[d]) << shamt;
+        t[i] ^= (t[i] >> shamt) & swapmask[d];
       }
     }
   }
 
   int SiftReo() {
-    int best = CountBDDNodes();
+    int best = BDDCountNodes();
     std::list<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
     while(!vars.empty()) {
@@ -293,7 +289,7 @@ public:
       auto vLevelsOld = vLevels;
       for(int i = vLevels[maxvar]; i < nInputs - 1; i++) {
         SwapLevel(i);
-        int count = CountBDDNodes();
+        int count = BDDCountNodes();
         if(best > count) {
           best = count;
           bestt = t;
@@ -304,7 +300,7 @@ public:
       vLevels = vLevelsOld;
       for(int i = vLevels[maxvar]-1; i >= 0; i--) {
         SwapLevel(i);
-        int count = CountBDDNodes();
+        int count = BDDCountNodes();
         if(best > count) {
           best = count;
           bestt = t;
@@ -366,24 +362,24 @@ public:
   }
 };
 
-const uint TT::ones[] = {0x00000001,
-                         0x00000003,
-                         0x0000000f,
-                         0x000000ff,
-                         0x0000ffff,
-                         0xffffffff};
+const TT::word TT::ones[] = {0x00000001,
+                             0x00000003,
+                             0x0000000f,
+                             0x000000ff,
+                             0x0000ffff,
+                             0xffffffff};
 
-const uint TT::sieve[] = {0x22222222,
-                          0x0c0c0c0c,
-                          0x00f000f0,
-                          0x0000ff00};
+const TT::word TT::swapmask[] = {0x22222222,
+                                 0x0c0c0c0c,
+                                 0x00f000f0,
+                                 0x0000ff00};
 
 class TTDC : public TT{
 public:
-  std::vector<uint> caret;
+  std::vector<word> caret;
 
   TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
-    std::vector<uint> care(nSize);
+    std::vector<word> care(nSize);
     std::vector<int> count(1 << nInputs);
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
@@ -405,7 +401,7 @@ public:
     }
   }
 
-  uint GetCare(int index_lev, int lev) {
+  word GetCare(int index_lev, int lev) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= 5);
     int index = (index_lev >> (lev + 5 - nInputs));
@@ -415,16 +411,16 @@ public:
 
   bool CheckDC(int index, int lev) {
     if(nInputs - lev > 5) {
-      int nScope = 1 << (nInputs - lev - 5);
-      for(int i = 0; i < nScope; i++) {
-        uint value = caret[nScope * index + i];
+      int nScopeSize = 1 << (nInputs - lev - 5);
+      for(int i = 0; i < nScopeSize; i++) {
+        word value = caret[nScopeSize * index + i];
         if(value != 0) {
           return false;
         }
       }
       return true;
     } else {
-      uint value = GetCare(index, lev);
+      word value = GetCare(index, lev);
       if(value != 0) {
         return false;
       }
@@ -438,19 +434,19 @@ public:
       return;
     }
     if(nInputs - lev > 5) {
-      int nScope = 1 << (nInputs - lev - 5);
-      for(int i = 0; i < nScope; i++) {
-        caret[nScope * index1 + i] |= caret[nScope * index2 + i];
+      int nScopeSize = 1 << (nInputs - lev - 5);
+      for(int i = 0; i < nScopeSize; i++) {
+        caret[nScopeSize * index1 + i] |= caret[nScopeSize * index2 + i];
       }
     } else {
-      uint value = GetCare(index2, lev);
+      word value = GetCare(index2, lev);
       int index = index1 >> (lev + 5 - nInputs);
       int pos = (index1 % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
       caret[index] |= value << pos;
     }
   }
 
-  int CountBDDNodesOSM() {
+  int BDDCountNodesOSM() {
     auto oldcaret = caret;
     vvIndices.clear();
     vvIndices.resize(nInputs);
@@ -459,7 +455,7 @@ public:
       if(CheckDC(i, 0)) {
         continue;
       }
-      int r = CountBDDNodesOne(i, 0);
+      int r = BDDCountNodesOne(i, 0);
       if(r != i << 1) {
         MergeCare(r >> 1, i, 0);
       }
@@ -469,7 +465,7 @@ public:
         int cof0 = -3, cof1 = -3;
         bool cof0dc = CheckDC(index << 1, i);
         if(!cof0dc) {
-          cof0 = CountBDDNodesOne(index << 1, i);
+          cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
             MergeCare(cof0 >> 1, index << 1, i);
           }
@@ -477,7 +473,7 @@ public:
         }
         bool cof1dc = CheckDC((index << 1) ^ 1, i);
         if(!cof1dc) {
-          cof1 = CountBDDNodesOne((index << 1) ^ 1, i);
+          cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
           if(cof1 != ((index << 2) ^ 2)) {
             MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
           }
@@ -556,18 +552,18 @@ public:
   void CopyFunc(int index1, int index2, bool neg, int lev) {
     assert(index1 >= 0);
     if(nInputs - lev > 5) {
-      int nScope = 1 << (nInputs - lev - 5);
-      uint one = ones[5];
-      for(int i = 0; i < nScope; i++) {
+      int nScopeSize = 1 << (nInputs - lev - 5);
+      word one = ones[5];
+      for(int i = 0; i < nScopeSize; i++) {
         if(index2 < 0) {
-          t[nScope * index1 + i] = neg? one: 0;
+          t[nScopeSize * index1 + i] = neg? one: 0;
         } else {
-          t[nScope * index1 + i] = neg? ~t[nScope * index2 + i]: t[nScope * index2 + i];
+          t[nScopeSize * index1 + i] = neg? ~t[nScopeSize * index2 + i]: t[nScopeSize * index2 + i];
         }
       }
     } else {
-      uint value;
-      uint one = ones[nInputs - lev];
+      word value;
+      word one = ones[nInputs - lev];
       if(index2 < 0) {
         value = neg? one: 0;
       } else {
@@ -591,7 +587,7 @@ public:
         }
         continue;
       }
-      int r = CountBDDNodesOne(i, 0);
+      int r = BDDCountNodesOne(i, 0);
       if(r != i << 1) {
         MergeCare(r >> 1, i, 0);
         merged[0].push_back({r, i});
@@ -602,7 +598,7 @@ public:
         int cof0, cof1;
         bool cof0dc = CheckDC(index << 1, i);
         if(!cof0dc) {
-          cof0 = CountBDDNodesOne(index << 1, i);
+          cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
             MergeCare(cof0 >> 1, index << 1, i);
             merged[i].push_back({cof0, index << 1});
@@ -610,7 +606,7 @@ public:
         }
         bool cof1dc = CheckDC((index << 1) ^ 1, i);
         if(!cof1dc) {
-          cof1 = CountBDDNodesOne((index << 1) ^ 1, i);
+          cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
           if(cof1 != ((index << 2) ^ 2)) {
             MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
             merged[i].push_back({cof1, (index << 1) ^ 1});
@@ -636,11 +632,13 @@ public:
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   TT tt(onsets, nInputs);
-  std::cout << tt.CountBDDNodes() << std::endl;
+  std::cout << tt.BDDCountNodes() << std::endl;
   TTDC ttdc(onsets, nInputs, pBPats, nBPats, rarity);
-  std::cout << ttdc.CountBDDNodes() << std::endl;
-  std::cout << ttdc.CountBDDNodesOSM() << std::endl;
+  std::cout << ttdc.BDDCountNodes() << std::endl;
+  std::cout << ttdc.BDDCountNodesOSM() << std::endl;
   ttdc.OSM();
-  std::cout << ttdc.CountBDDNodes() << std::endl;
-  ttdc.GenerateBDDBlif(inputs, outputs, f);
+  std::cout << ttdc.BDDCountNodes() << std::endl;
+  tt.RandomSiftReo(20);
+  std::cout << tt.BDDCountNodes() << std::endl;
+  tt.BDDGenerateBlif(inputs, outputs, f);
 }
