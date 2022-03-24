@@ -80,6 +80,36 @@ public:
     t[index] ^= value << pos;
   }
 
+  void CopyFunc(int index1, int index2, bool fCompl, int lev) {
+    assert(index1 >= 0);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        if(index2 < 0) {
+          t[nScopeSize * index1 + i] = 0;
+        } else {
+          t[nScopeSize * index1 + i] = t[nScopeSize * index2 + i];
+        }
+        if(fCompl) {
+          t[nScopeSize * index1 + i] = ~t[nScopeSize * index1 + i];
+        }
+      }
+    } else {
+      word one = ones[logwidth];
+      word value;
+      if(index2 < 0) {
+        value = 0;
+      } else {
+        value = GetValue(index2, lev);
+      }
+      if(fCompl) {
+        value ^= one;
+      }
+      SetValue(index1, lev, value);
+    }
+  }
+
   int BDDFind(int index, int lev) {
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
@@ -377,21 +407,22 @@ const TT::word TT::swapmask[] = {0x22222222,
 class TTDC : public TT{
 public:
   std::vector<word> caret;
+  std::vector<word> care;
 
   TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
-    std::vector<word> care(nSize);
+    care.resize(nSize);
     std::vector<int> count(1 << nInputs);
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
         int pat = 0;
         for(auto pBPat: pBPats) {
           pat <<= 1;
-          pat |= ((pBPat[i] >> j) & 1);
+          pat |= (pBPat[i] >> j) & 1;
         }
         count[pat]++;
         if(count[pat] == rarity) {
-          int index = pat / 32;
-          int pos = pat % 32;
+          int index = pat / ww;
+          int pos = pat % ww;
           care[index] |= 1 << pos;
         }
       }
@@ -401,17 +432,25 @@ public:
     }
   }
 
+  void RestoreCare() {
+    caret.clear();
+    for(int i = 0; i < nOutputs; i++) {
+      caret.insert(caret.end(), care.begin(), care.end());
+    }
+  }
+
   word GetCare(int index_lev, int lev) {
     assert(index_lev >= 0);
-    assert(nInputs - lev <= 5);
-    int index = (index_lev >> (lev + 5 - nInputs));
-    int pos = (index_lev % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
-    return (caret[index] >> pos) & ones[nInputs - lev];
+    assert(nInputs - lev <= lww);
+    int logwidth = nInputs - lev;
+    int index = index_lev >> (lww - logwidth);
+    int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
+    return (caret[index] >> pos) & ones[logwidth];
   }
 
   bool CheckDC(int index, int lev) {
-    if(nInputs - lev > 5) {
-      int nScopeSize = 1 << (nInputs - lev - 5);
+    if(nInputs - lev > lww) {
+      int nScopeSize = 1 << (nInputs - lev - lww);
       for(int i = 0; i < nScopeSize; i++) {
         word value = caret[nScopeSize * index + i];
         if(value != 0) {
@@ -419,13 +458,12 @@ public:
         }
       }
       return true;
-    } else {
-      word value = GetCare(index, lev);
-      if(value != 0) {
-        return false;
-      }
-      return true;
     }
+    word value = GetCare(index, lev);
+    if(value != 0) {
+      return false;
+    }
+    return true;
   }
 
   void MergeCare(int index1, int index2, int lev) {
@@ -433,21 +471,21 @@ public:
     if(index1 < 0) {
       return;
     }
-    if(nInputs - lev > 5) {
-      int nScopeSize = 1 << (nInputs - lev - 5);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize; i++) {
         caret[nScopeSize * index1 + i] |= caret[nScopeSize * index2 + i];
       }
     } else {
       word value = GetCare(index2, lev);
-      int index = index1 >> (lev + 5 - nInputs);
-      int pos = (index1 % (1 << (lev + 5 - nInputs))) << (nInputs - lev);
+      int index = index1 >> (lww - logwidth);
+      int pos = (index1 % (1 << (lww - logwidth))) << logwidth;
       caret[index] |= value << pos;
     }
   }
 
   int BDDCountNodesOSM() {
-    auto oldcaret = caret;
     vvIndices.clear();
     vvIndices.resize(nInputs);
     std::vector<std::vector<int> > children(nInputs);
@@ -462,7 +500,7 @@ public:
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        int cof0 = -3, cof1 = -3;
+        int cof0, cof1;
         bool cof0dc = CheckDC(index << 1, i);
         if(!cof0dc) {
           cof0 = BDDCountNodesOne(index << 1, i);
@@ -494,40 +532,43 @@ public:
       std::map<int, std::pair<int, int> > nextskipped;
       std::map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
       for(uint j = 0; j < vvIndices[i].size(); j++) {
-        std::pair<int, int> cof0 = {i+1, children[i][j+j]};
-        std::pair<int, int> cof1 = {i+1, children[i][j+j+1]};
-        int cof0ind = children[i][j+j] >> 1;
-        int cof1ind = children[i][j+j+1] >> 1;
+        std::pair<int, int> cof0, cof1;
+        int cof0index = children[i][j+j] >> 1;
+        int cof1index = children[i][j+j+1] >> 1;
         bool cof0c = children[i][j+j] & 1;
         bool cof1c = children[i][j+j+1] & 1;
-        if(cof0ind < 0) {
-          cof0.first = nInputs;
-        } else if(skipped.count(cof0ind)) {
-          cof0 = skipped[cof0ind];
+        if(cof0index < 0) {
+          cof0 = {nInputs, children[i][j+j]};
+        } else if(skipped.count(cof0index)) {
+          cof0 = skipped[cof0index];
           cof0.second ^= cof0c;
+        } else {
+          cof0 = {i+1, children[i][j+j]};
         }
-        if(cof1ind < 0) {
-          cof1.first = nInputs;
-        } else if(skipped.count(cof1ind)) {
-          cof1 = skipped[cof1ind];
+        if(cof1index < 0) {
+          cof1 = {nInputs, children[i][j+j+1]};
+        } else if(skipped.count(cof1index)) {
+          cof1 = skipped[cof1index];
           cof1.second ^= cof1c;
+        } else {
+          cof1 = {i+1, children[i][j+j+1]};
         }
         if(cof0 == cof1) {
           nextskipped[vvIndices[i][j]] = cof0;
           vvIndicesRedundant[i].push_back(vvIndices[i][j]);
           continue;
         }
-        bool neg = cof0.second & 1;
-        if(neg) {
+        bool fCompl = cof0.second & 1;
+        if(fCompl) {
           cof0.second ^= 1;
           cof1.second ^= 1;
         }
         if(unique.count({cof0, cof1})) {
-          nextskipped[vvIndices[i][j]] = {i, unique[{cof0, cof1}] ^ neg};
+          nextskipped[vvIndices[i][j]] = {i, unique[{cof0, cof1}] ^ fCompl};
           vvIndicesRedundant[i].push_back(vvIndices[i][j]);
           continue;
         }
-        unique[{cof0, cof1}] = (vvIndices[i][j] << 1) ^ neg;
+        unique[{cof0, cof1}] = (vvIndices[i][j] << 1) ^ fCompl;
       }
       skipped = nextskipped;
     }
@@ -545,35 +586,8 @@ public:
       vvIndices[i] = vIndicesNew;
       count += vvIndices[i].size();
     }
-    caret = oldcaret;
+    RestoreCare();
     return count;
-  }
-
-  void CopyFunc(int index1, int index2, bool neg, int lev) {
-    assert(index1 >= 0);
-    if(nInputs - lev > 5) {
-      int nScopeSize = 1 << (nInputs - lev - 5);
-      word one = ones[5];
-      for(int i = 0; i < nScopeSize; i++) {
-        if(index2 < 0) {
-          t[nScopeSize * index1 + i] = neg? one: 0;
-        } else {
-          t[nScopeSize * index1 + i] = neg? ~t[nScopeSize * index2 + i]: t[nScopeSize * index2 + i];
-        }
-      }
-    } else {
-      word value;
-      word one = ones[nInputs - lev];
-      if(index2 < 0) {
-        value = neg? one: 0;
-      } else {
-        value = GetValue(index2, lev);
-        if(neg) {
-          value ^= one;
-        }
-      }
-      SetValue(index1, lev, value);
-    }
   }
 
   void OSM() {
