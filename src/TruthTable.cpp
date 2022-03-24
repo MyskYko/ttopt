@@ -16,7 +16,6 @@ public:
   int nSize;
   int nOutputs;
   std::vector<uint> t;
-  std::vector<uint> caret;
 
   std::vector<std::vector<int> > vvIndices;
   std::vector<int> vLevels;
@@ -41,26 +40,6 @@ public:
     std::iota(vLevels.begin(), vLevels.end(), 0);
   }
 
-  TT(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
-    caret.resize(nSize);
-    std::vector<int> count(1 << nInputs);
-    for(int i = 0; i < nBPats; i++) {
-      for(int j = 0; j < 8; j++) {
-        int pat = 0;
-        for(auto pBPat: pBPats) {
-          pat <<= 1;
-          pat |= ((pBPat[i] >> j) & 1);
-        }
-        count[pat]++;
-        if(count[pat] == rarity) {
-          int index = pat / 32;
-          int pos = pat % 32;
-          caret[index + nSize * i] |= 1 << pos;
-        }
-      }
-    }
-  }
-  
   void GeneratePla(std::string filename) {
     std::ofstream f(filename);
     f << ".i " << nInputs << std::endl;
@@ -378,10 +357,36 @@ const uint TT::sieve[] = {0x22222222,
                           0x00f000f0,
                           0x0000ff00};
 
+class TTDC : public TT{
+public:
+  std::vector<uint> caret;
+
+  TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
+    caret.resize(nSize);
+    std::vector<int> count(1 << nInputs);
+    for(int i = 0; i < nBPats; i++) {
+      for(int j = 0; j < 8; j++) {
+        int pat = 0;
+        for(auto pBPat: pBPats) {
+          pat <<= 1;
+          pat |= ((pBPat[i] >> j) & 1);
+        }
+        count[pat]++;
+        if(count[pat] == rarity) {
+          int index = pat / 32;
+          int pos = pat % 32;
+          caret[index] |= 1 << pos;
+        }
+      }
+    }
+  }
+};
+
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   TT tt(onsets, nInputs);
-  tt.RandomSiftReo(20);
+  std::cout << tt.CountBDDNodes() << std::endl;
+  TTDC ttdc(onsets, nInputs, pBPats, nBPats, rarity);
+  std::cout << ttdc.CountBDDNodes() << std::endl;
   tt.GenerateBDDBlif(inputs, outputs, f);
-
 }
