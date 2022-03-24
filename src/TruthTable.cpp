@@ -57,7 +57,7 @@ public:
     }
   }
 
-  uint BDDGetValue(int index_lev, int lev) {
+  uint GetValue(int index_lev, int lev) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= 5);
     int index = index_lev >> (lev + 5 - nInputs);
@@ -65,7 +65,7 @@ public:
     return (t[index] >> pos) & ones[nInputs - lev];
   }
 
-  void BDDSetValue(int index_lev, int lev, uint value) {
+  void SetValue(int index_lev, int lev, uint value) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= 5);
     int index = index_lev >> (lev + 5 - nInputs);
@@ -115,7 +115,7 @@ public:
       }
     } else {
       uint one = ones[nInputs - lev];
-      uint value = BDDGetValue(index, lev);
+      uint value = GetValue(index, lev);
       if(value == 0) {
         return -2;
       }
@@ -123,7 +123,7 @@ public:
         return -1;
       }
       for(int index2: vvIndices[lev]) {
-        uint value2 = BDDGetValue(index2, lev);
+        uint value2 = GetValue(index2, lev);
         if(value2 == value) {
           return index2 << 1;
         }
@@ -187,7 +187,7 @@ public:
       }
       return true;
     }
-    return !(BDDGetValue(index1, lev) & (BDDGetValue(index2, lev) ^ ones[nInputs - lev]));
+    return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[nInputs - lev]));
   }
 
   int GenerateBDDBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
@@ -571,12 +571,12 @@ public:
       if(index2 < 0) {
         value = neg? one: 0;
       } else {
-        value = BDDGetValue(index2, lev);
+        value = GetValue(index2, lev);
         if(neg) {
           value ^= one;
         }
       }
-      BDDSetValue(index1, lev, value);
+      SetValue(index1, lev, value);
     }
   }
 
