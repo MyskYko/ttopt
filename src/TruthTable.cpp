@@ -629,7 +629,7 @@ public:
     BDDRemoveRedundantIndices(vvIndicesRedundant);
   }
 
-  int BDDCountNodesDC() {
+  int BDDCountNodesOSDM() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
     std::vector<std::vector<int> > vvChildren(nInputs);
@@ -679,7 +679,7 @@ public:
     return count;
   }
 
-  void DC() {
+  void OSDM() {
     originalt = t;
     std::vector<std::vector<std::pair<int, int> > > merged(nInputs);
     vvIndices.clear();
@@ -855,6 +855,15 @@ public:
         CopyFunc(p.second, p.first >> 1, p.first & 1, i);
       }
     }
+  }
+};
+
+class TTOSDM : public TTCare{
+public:
+  TTOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+
+  int BDDCountNodes() override {
+    return BDDCountNodesOSDM();
   }
 };
 
