@@ -412,7 +412,7 @@ const TT::word TT::swapmask[] = {0x22222222,
                                  0x00f000f0,
                                  0x0000ff00};
 
-class TTDC : public TT{
+class TTCare : public TT{
 public:
   std::vector<word> originalt;
   std::vector<word> caret;
@@ -420,8 +420,7 @@ public:
 
   std::vector<std::vector<word> > savedcare;
 
-  TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
-    originalt = t;
+  TTCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
     care.resize(nSize);
     std::vector<int> count(1 << nInputs);
     for(int i = 0; i < nBPats; i++) {
@@ -462,6 +461,33 @@ public:
   void Load(uint i) {
     TT::Load(i);
     care = savedcare[i];
+    RestoreCare();
+  }
+
+  void SwapLevel(int lev) {
+    TT::SwapLevel(lev);
+    if(nInputs - lev - 1 > lww) {
+      int nScopeSize = 1 << (nInputs - lev - 2 - lww);
+      for(int i = nScopeSize; i < nSize; i += (nScopeSize << 2)) {
+        for(int j = 0; j < nScopeSize; j++) {
+          std::swap(care[i + j], care[i + nScopeSize + j]);
+        }
+      }
+    } else if(nInputs - lev - 1 == lww) {
+      for(int i = 0; i < nSize; i += 2) {
+        care[i+1] ^= care[i] >> (ww / 2);
+        care[i] ^= care[i+1] << (ww / 2);
+        care[i+1] ^= care[i] >> (ww / 2);
+      }
+    } else {
+      for(int i = 0; i < nSize; i++) {
+        int d = nInputs - lev - 2;
+        int shamt = 1 << d;
+        care[i] ^= (care[i] >> shamt) & swapmask[d];
+        care[i] ^= (care[i] & swapmask[d]) << shamt;
+        care[i] ^= (care[i] >> shamt) & swapmask[d];
+      }
+    }
     RestoreCare();
   }
 
@@ -653,6 +679,7 @@ public:
   }
 
   void OSM() {
+    originalt = t;
     std::vector<std::vector<std::pair<int, int> > > merged(nInputs);
     vvIndices.clear();
     vvIndices.resize(nInputs);
@@ -703,37 +730,14 @@ public:
       }
     }
   }
+};
+
+class TTOSM : public TTCare{
+public:
+  TTOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
   int BDDCountNodes() {
     return BDDCountNodesOSM();
-  }
-
-  void SwapLevel(int lev) {
-    TT::SwapLevel(lev);
-    // originalt = t;
-    if(nInputs - lev - 1 > lww) {
-      int nScopeSize = 1 << (nInputs - lev - 2 - lww);
-      for(int i = nScopeSize; i < nSize; i += (nScopeSize << 2)) {
-        for(int j = 0; j < nScopeSize; j++) {
-          std::swap(care[i + j], care[i + nScopeSize + j]);
-        }
-      }
-    } else if(nInputs - lev - 1 == lww) {
-      for(int i = 0; i < nSize; i += 2) {
-        care[i+1] ^= care[i] >> (ww / 2);
-        care[i] ^= care[i+1] << (ww / 2);
-        care[i+1] ^= care[i] >> (ww / 2);
-      }
-    } else {
-      for(int i = 0; i < nSize; i++) {
-        int d = nInputs - lev - 2;
-        int shamt = 1 << d;
-        care[i] ^= (care[i] >> shamt) & swapmask[d];
-        care[i] ^= (care[i] & swapmask[d]) << shamt;
-        care[i] ^= (care[i] >> shamt) & swapmask[d];
-      }
-    }
-    RestoreCare();
   }
 };
 
@@ -745,11 +749,12 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
   
-  TTDC tt(onsets, nInputs, pBPats, nBPats, rarity);
-  std::cout << tt.BDDCountNodes() << std::endl;
-  // tt.SiftReo();
+  TTOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // // tt.SiftReo();
   tt.RandomSiftReo(20);
-  std::cout << tt.BDDCountNodes() << std::endl;
+  // std::cout << tt.BDDCountNodes() << std::endl;
   tt.OSM();
+  // std::cout << tt.BDDCountNodes() << std::endl;
   tt.BDDGenerateBlif(inputs, outputs, f);
 }
