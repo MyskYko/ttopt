@@ -185,6 +185,21 @@ public:
     vvIndices[lev].push_back(index);
     return index << 1;
   }
+
+  void BDDRemoveRedundantIndices(std::vector<std::vector<int> > const &vvIndicesRedundant) {
+    for(int i = 0; i < nInputs; i++) {
+      auto it = vvIndicesRedundant[i].begin();
+      std::vector<int> vIndicesNew;
+      for(int j: vvIndices[i]) {
+        if(it == vvIndicesRedundant[i].end() || j != *it) {
+          vIndicesNew.push_back(j);
+        } else {
+          it++;
+        }
+      }
+      vvIndices[i] = vIndicesNew;
+    }
+  }
   
   virtual int BDDCountNodes() {
     vvIndices.clear();
@@ -202,18 +217,9 @@ public:
         }
       }
     }
+    BDDRemoveRedundantIndices(vvIndicesRedundant);
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
-      auto it = vvIndicesRedundant[i].begin();
-      std::vector<int> vIndicesNew;
-      for(int j: vvIndices[i]) {
-        if(it == vvIndicesRedundant[i].end() || j != *it) {
-          vIndicesNew.push_back(j);
-        } else {
-          it++;
-        }
-      }
-      vvIndices[i] = vIndicesNew;
       count += vvIndices[i].size();
     }
     return count;
@@ -450,7 +456,7 @@ public:
     }
   }
 
-  void Save(uint i) {
+  void Save(uint i) override {
     TT::Save(i);
     if(savedcare.size() < i + 1) {
       savedcare.resize(i + 1);
@@ -458,13 +464,13 @@ public:
     savedcare[i] = care;
   }
 
-  void Load(uint i) {
+  void Load(uint i) override {
     TT::Load(i);
     care = savedcare[i];
     RestoreCare();
   }
 
-  void SwapLevel(int lev) {
+  void SwapLevel(int lev) override {
     TT::SwapLevel(lev);
     if(nInputs - lev - 1 > lww) {
       int nScopeSize = 1 << (nInputs - lev - 2 - lww);
@@ -573,47 +579,7 @@ public:
     }
   }
 
-  int BDDCountNodesDC() {
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > children(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(CheckDC(i, 0)) {
-        continue;
-      }
-      int r = BDDCountNodesOne(i, 0);
-      if(r != i << 1) {
-        MergeCare(r >> 1, i, 0);
-      }
-    }
-    for(int i = 1; i < nInputs; i++) {
-      for(int index: vvIndices[i-1]) {
-        int cof0, cof1;
-        bool cof0dc = CheckDC(index << 1, i);
-        if(!cof0dc) {
-          cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-          }
-          children[i-1].push_back(cof0);
-        }
-        bool cof1dc = CheckDC((index << 1) ^ 1, i);
-        if(!cof1dc) {
-          cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
-          if(cof1 != ((index << 2) ^ 2)) {
-            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
-          }
-          children[i-1].push_back(cof1);
-        }
-        assert(!cof0dc || !cof1dc);
-        if(cof0dc) {
-          children[i-1].push_back(cof1);
-        }
-        if(cof1dc) {
-          children[i-1].push_back(cof0);
-        }
-      }
-    }
+  void BDDRemoveRedundantIndicesFromChildren(std::vector<std::vector<int> > const &children) {
     std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     std::map<int, std::pair<int, int> > skipped;
     for(int i = nInputs - 2; i >= 0; i--) {
@@ -660,18 +626,53 @@ public:
       }
       skipped = nextskipped;
     }
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      auto it = vvIndicesRedundant[i].begin();
-      std::vector<int> vIndicesNew;
-      for(int j: vvIndices[i]) {
-        if(it == vvIndicesRedundant[i].end() || j != *it) {
-          vIndicesNew.push_back(j);
-        } else {
-          it++;
+    BDDRemoveRedundantIndices(vvIndicesRedundant);
+  }
+
+  int BDDCountNodesDC() {
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    std::vector<std::vector<int> > children(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(CheckDC(i, 0)) {
+        continue;
+      }
+      int r = BDDCountNodesOne(i, 0);
+      if(r != i << 1) {
+        MergeCare(r >> 1, i, 0);
+      }
+    }
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        int cof0, cof1;
+        bool cof0dc = CheckDC(index << 1, i);
+        if(!cof0dc) {
+          cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          children[i-1].push_back(cof0);
+        }
+        bool cof1dc = CheckDC((index << 1) ^ 1, i);
+        if(!cof1dc) {
+          cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+          }
+          children[i-1].push_back(cof1);
+        }
+        assert(!cof0dc || !cof1dc);
+        if(cof0dc) {
+          children[i-1].push_back(cof1);
+        }
+        if(cof1dc) {
+          children[i-1].push_back(cof0);
         }
       }
-      vvIndices[i] = vIndicesNew;
+    }
+    BDDRemoveRedundantIndicesFromChildren(children);
+    int count = 1; // const node
+    for(int i = 0; i < nInputs; i++) {
       count += vvIndices[i].size();
     }
     RestoreCare();
@@ -790,64 +791,9 @@ public:
         }
       }
     }
-     std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
-     std::map<int, std::pair<int, int> > skipped;
-     for(int i = nInputs - 2; i >= 0; i--) {
-       std::map<int, std::pair<int, int> > nextskipped;
-       std::map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
-       for(uint j = 0; j < vvIndices[i].size(); j++) {
-         std::pair<int, int> cof0, cof1;
-         int cof0index = children[i][j+j] >> 1;
-         int cof1index = children[i][j+j+1] >> 1;
-         bool cof0c = children[i][j+j] & 1;
-         bool cof1c = children[i][j+j+1] & 1;
-         if(cof0index < 0) {
-           cof0 = {nInputs, children[i][j+j]};
-         } else if(skipped.count(cof0index)) {
-           cof0 = skipped[cof0index];
-           cof0.second ^= cof0c;
-         } else {
-           cof0 = {i+1, children[i][j+j]};
-         }
-         if(cof1index < 0) {
-           cof1 = {nInputs, children[i][j+j+1]};
-         } else if(skipped.count(cof1index)) {
-           cof1 = skipped[cof1index];
-           cof1.second ^= cof1c;
-         } else {
-           cof1 = {i+1, children[i][j+j+1]};
-         }
-         if(cof0 == cof1) {
-           nextskipped[vvIndices[i][j]] = cof0;
-           vvIndicesRedundant[i].push_back(vvIndices[i][j]);
-           continue;
-         }
-         bool fCompl = cof0.second & 1;
-         if(fCompl) {
-           cof0.second ^= 1;
-           cof1.second ^= 1;
-         }
-         if(unique.count({cof0, cof1})) {
-           nextskipped[vvIndices[i][j]] = {i, unique[{cof0, cof1}] ^ fCompl};
-           vvIndicesRedundant[i].push_back(vvIndices[i][j]);
-           continue;
-         }
-         unique[{cof0, cof1}] = (vvIndices[i][j] << 1) ^ fCompl;
-       }
-       skipped = nextskipped;
-     }
+    BDDRemoveRedundantIndicesFromChildren(children);
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
-      auto it = vvIndicesRedundant[i].begin();
-      std::vector<int> vIndicesNew;
-      for(int j: vvIndices[i]) {
-        if(it == vvIndicesRedundant[i].end() || j != *it) {
-          vIndicesNew.push_back(j);
-        } else {
-          it++;
-        }
-      }
-      vvIndices[i] = vIndicesNew;
       count += vvIndices[i].size();
     }
     RestoreCare();
@@ -916,7 +862,7 @@ class TTOSM : public TTCare{
 public:
   TTOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
-  int BDDCountNodes() {
+  int BDDCountNodes() override {
     return BDDCountNodesOSM();
   }
 };
