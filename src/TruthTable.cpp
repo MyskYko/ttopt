@@ -406,10 +406,12 @@ const TT::word TT::swapmask[] = {0x22222222,
 
 class TTDC : public TT{
 public:
+  std::vector<word> originalt;
   std::vector<word> caret;
   std::vector<word> care;
 
   TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
+    originalt = t;
     care.resize(nSize);
     std::vector<int> count(1 << nInputs);
     for(int i = 0; i < nBPats; i++) {
@@ -436,6 +438,42 @@ public:
     caret.clear();
     for(int i = 0; i < nOutputs; i++) {
       caret.insert(caret.end(), care.begin(), care.end());
+    }
+  }
+
+  void GeneratePlaCare(std::string filename) {
+    std::ofstream f(filename);
+    f << ".i " << nInputs << std::endl;
+    f << ".o 1" << std::endl;
+    for(int index = 0; index < nSize; index++) {
+      for(int pos = 0; pos < ww; pos++) {
+        int pat = (index << lww) + pos;
+        f << BinaryToString(pat, nInputs) << " ";
+        f << ((care[index] >> pos) & 1);
+        f << std::endl;
+      }
+    }
+  }
+
+  void GeneratePlaMasked(std::string filename) {
+    std::ofstream f(filename);
+    f << ".i " << nInputs << std::endl;
+    f << ".o " << nOutputs << std::endl;
+    for(int index = 0; index < nSize; index++) {
+      for(int pos = 0; pos < ww; pos++) {
+        int pat = (index << lww) + pos;
+        f << BinaryToString(pat, nInputs) << " ";
+        if((care[index] >> pos) & 1) {
+          for(int i = 0; i < nOutputs; i++) {
+            f << ((t[nSize * i + index] >> pos) & 1);
+          }
+        } else {
+          for(int i = 0; i < nOutputs; i++) {
+            f << ((originalt[nSize * i + index] >> pos) & 1);
+          }
+        }
+        f << std::endl;
+      }
     }
   }
 
@@ -652,7 +690,6 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   std::cout << ttdc.BDDCountNodesOSM() << std::endl;
   ttdc.OSM();
   std::cout << ttdc.BDDCountNodes() << std::endl;
-  tt.RandomSiftReo(20);
-  std::cout << tt.BDDCountNodes() << std::endl;
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  ttdc.BDDGenerateBlif(inputs, outputs, f);
+  ttdc.GeneratePlaMasked("test.pla");
 }
