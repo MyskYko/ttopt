@@ -25,6 +25,9 @@ public:
   std::vector<std::vector<int> > vvIndices;
   std::vector<int> vLevels;
 
+  std::vector<std::vector<word> > savedt;
+  std::vector<std::vector<int> > vLevelsSaved;
+
   std::mt19937 rng;
   static const word ones[];
   static const word swapmask[];
@@ -43,6 +46,20 @@ public:
     }
     vLevels.resize(nInputs);
     std::iota(vLevels.begin(), vLevels.end(), 0);
+  }
+
+  virtual void Save(uint i) {
+    if(savedt.size() < i + 1) {
+      savedt.resize(i + 1);
+      vLevelsSaved.resize(i + 1);
+    }
+    savedt[i] = t;
+    vLevelsSaved[i] = vLevels;
+  }
+
+  virtual void Load(uint i) {
+    t = savedt[i];
+    vLevels = vLevelsSaved[i];
   }
 
   void GeneratePla(std::string filename) {
@@ -169,7 +186,7 @@ public:
     return index << 1;
   }
   
-  int BDDCountNodes() {
+  virtual int BDDCountNodes() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
     std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
@@ -266,7 +283,7 @@ public:
     }
   }
 
-  void SwapLevel(int lev) {
+  virtual void SwapLevel(int lev) {
     auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
     auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
     std::swap(*it0, *it1);
@@ -296,6 +313,7 @@ public:
 
   int SiftReo() {
     int best = BDDCountNodes();
+    Save(0);
     std::list<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
     while(!vars.empty()) {
@@ -313,32 +331,25 @@ public:
         break;
       }
       vars.erase(maxit);
-      auto bestt = t;
-      auto vLevelsBest = vLevels;
-      auto oldt = t;
-      auto vLevelsOld = vLevels;
+      Save(1);
       for(int i = vLevels[maxvar]; i < nInputs - 1; i++) {
         SwapLevel(i);
         int count = BDDCountNodes();
         if(best > count) {
           best = count;
-          bestt = t;
-          vLevelsBest = vLevels;
+          Save(0);
         }
       }
-      t = oldt;
-      vLevels = vLevelsOld;
+      Load(1);
       for(int i = vLevels[maxvar]-1; i >= 0; i--) {
         SwapLevel(i);
         int count = BDDCountNodes();
         if(best > count) {
           best = count;
-          bestt = t;
-          vLevelsBest = vLevels;
+          Save(0);
         }
       }
-      t = bestt;
-      vLevels = vLevelsBest;
+      Load(0);
     }
     return best;
   }
@@ -362,8 +373,7 @@ public:
 
   int RandomSiftReo(int nRound) {
     int best = SiftReo();
-    auto bestt = t;
-    auto vLevelsBest = vLevels;
+    Save(2);
     for(int i = 0; i < nRound; i++) {
       std::vector<int> vLevelsNew(nInputs);
       std::iota(vLevelsNew.begin(), vLevelsNew.end(), 0);
@@ -372,12 +382,10 @@ public:
       int r = SiftReo();
       if(best > r) {
         best = r;
-        bestt = t;
-        vLevelsBest = vLevels;
+        Save(2);
       }
     }
-    t = bestt;
-    vLevels = vLevelsBest;
+    Load(2);
     return best;
   }
 
@@ -410,6 +418,8 @@ public:
   std::vector<word> caret;
   std::vector<word> care;
 
+  std::vector<std::vector<word> > savedcare;
+
   TTDC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
     originalt = t;
     care.resize(nSize);
@@ -439,6 +449,20 @@ public:
     for(int i = 0; i < nOutputs; i++) {
       caret.insert(caret.end(), care.begin(), care.end());
     }
+  }
+
+  void Save(uint i) {
+    TT::Save(i);
+    if(savedcare.size() < i + 1) {
+      savedcare.resize(i + 1);
+    }
+    savedcare[i] = care;
+  }
+
+  void Load(uint i) {
+    TT::Load(i);
+    care = savedcare[i];
+    RestoreCare();
   }
 
   void GeneratePlaCare(std::string filename) {
@@ -679,17 +703,53 @@ public:
       }
     }
   }
+
+  int BDDCountNodes() {
+    return BDDCountNodesOSM();
+  }
+
+  void SwapLevel(int lev) {
+    TT::SwapLevel(lev);
+    // originalt = t;
+    if(nInputs - lev - 1 > lww) {
+      int nScopeSize = 1 << (nInputs - lev - 2 - lww);
+      for(int i = nScopeSize; i < nSize; i += (nScopeSize << 2)) {
+        for(int j = 0; j < nScopeSize; j++) {
+          std::swap(care[i + j], care[i + nScopeSize + j]);
+        }
+      }
+    } else if(nInputs - lev - 1 == lww) {
+      for(int i = 0; i < nSize; i += 2) {
+        care[i+1] ^= care[i] >> (ww / 2);
+        care[i] ^= care[i+1] << (ww / 2);
+        care[i+1] ^= care[i] >> (ww / 2);
+      }
+    } else {
+      for(int i = 0; i < nSize; i++) {
+        int d = nInputs - lev - 2;
+        int shamt = 1 << d;
+        care[i] ^= (care[i] >> shamt) & swapmask[d];
+        care[i] ^= (care[i] & swapmask[d]) << shamt;
+        care[i] ^= (care[i] >> shamt) & swapmask[d];
+      }
+    }
+    RestoreCare();
+  }
 };
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  TT tt(onsets, nInputs);
+  // TT tt(onsets, nInputs);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // // tt.SiftReo();
+  // tt.RandomSiftReo(20);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  
+  TTDC tt(onsets, nInputs, pBPats, nBPats, rarity);
   std::cout << tt.BDDCountNodes() << std::endl;
-  TTDC ttdc(onsets, nInputs, pBPats, nBPats, rarity);
-  std::cout << ttdc.BDDCountNodes() << std::endl;
-  std::cout << ttdc.BDDCountNodesOSM() << std::endl;
-  ttdc.OSM();
-  std::cout << ttdc.BDDCountNodes() << std::endl;
-  ttdc.BDDGenerateBlif(inputs, outputs, f);
-  ttdc.GeneratePlaMasked("test.pla");
+  // tt.SiftReo();
+  tt.RandomSiftReo(20);
+  std::cout << tt.BDDCountNodes() << std::endl;
+  tt.OSM();
+  tt.BDDGenerateBlif(inputs, outputs, f);
 }
