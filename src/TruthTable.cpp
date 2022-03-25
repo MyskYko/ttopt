@@ -113,7 +113,6 @@ public:
         }
       }
     } else {
-      word one = ones[logwidth];
       word value;
       if(index2 < 0) {
         value = 0;
@@ -121,7 +120,7 @@ public:
         value = GetValue(index2, lev);
       }
       if(fCompl) {
-        value ^= one;
+        value ^= ones[logwidth];
       }
       SetValue(index1, lev, value);
     }
@@ -738,12 +737,16 @@ public:
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
-        fEq &= !(caret[nScopeSize * index2 + i] & (t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i]));
-        fCompl &= !(caret[nScopeSize * index2 + i] & (~t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i]));
+        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
+        word cvalue = caret[nScopeSize * index2 + i];
+        fEq &= !(value & cvalue);
+        fCompl &= !(~value & cvalue);
       }
     } else {
-      fEq &= !(GetCare(index2, lev) & (GetValue(index1, lev) ^ GetValue(index2, lev)));
-      fCompl &= !(GetCare(index2, lev) & (GetValue(index1, lev) ^ ones[logwidth] ^ GetValue(index2, lev)));
+      word value = GetValue(index1, lev) ^ GetValue(index2, lev);
+      word cvalue = GetCare(index2, lev);
+      fEq &= !(value & cvalue);
+      fCompl &= !((value ^ ones[logwidth]) & cvalue);
     }
     return 2 * fCompl + fEq;
   }
@@ -858,6 +861,121 @@ public:
       }
     }
   }
+
+  bool Intersect(int index1, int index2, int lev, bool fCompl = false) {
+    int logwidth = nInputs - lev;
+    bool fEq = true;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
+        word cvalue = caret[nScopeSize * index1 + i] & caret[nScopeSize * index2 + i];
+        fEq &= !(value & cvalue);
+        fCompl &= !(~value & cvalue);
+      }
+    } else {
+      word value = GetValue(index1, lev) ^ GetValue(index2, lev);
+      word cvalue = GetCare(index1, lev) & GetCare(index2, lev);
+      fEq &= !(value & cvalue);
+      fCompl &= !((value ^ ones[logwidth]) & cvalue);
+    }
+    return 2 * fCompl + fEq;
+  }
+
+  void CopyFuncMasked(int index1, int index2, bool fCompl, int lev) {
+    assert(index1 >= 0);
+    assert(index2 >= 0);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        word value = t[nScopeSize * index2 + i];
+        if(fCompl) {
+          value = ~value;
+        }
+        word cvalue = caret[nScopeSize * index2 + i];
+        t[nScopeSize * index1 + i] &= ~cvalue;
+        t[nScopeSize * index1 + i] |= cvalue & value;
+      }
+    } else {
+      word one = ones[logwidth];
+      word value1 = GetValue(index1, lev);
+      word value2 = GetValue(index2, lev);
+      if(fCompl) {
+        value2 ^= one;
+      }
+      word cvalue = GetCare(index2, lev);
+      value1 &= cvalue ^ one;
+      value1 |= cvalue & value2;
+      SetValue(index1, lev, value1);
+    }
+  }
+
+  void TSM(bool fCompl) {
+    originalt = t;
+    std::vector<std::vector<std::pair<int, int> > > merged(nInputs);
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(IsDC(i, 0)) {
+        for(int j = 0; j < nSize; j++) {
+          t[j + nSize * i] = 0;
+        }
+        continue;
+      }
+      int r = BDDCountNodesOne(i, 0);
+      if(r != i << 1) {
+        MergeCare(r >> 1, i, 0);
+        merged[0].push_back({r, i});
+      }
+    }
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        if(int r = Include(index << 1, (index << 1) ^ 1, i, fCompl)) {
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+            merged[i].push_back({cof0, index << 1});
+          }
+          merged[i].push_back({(index << 2) ^ 1 ^ (r & 1), (index << 1) ^ 1});
+        } else if(int r = Include((index << 1) ^ 1, index << 1, i, fCompl)) {
+          MergeCare((index << 1) ^ 1, index << 1, i);
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+            merged[i].push_back({cof1, (index << 1) ^ 1});
+          }
+          merged[i].push_back({(index << 2) ^ 2 ^ 1 ^ (r & 1), index << 1});
+        } else if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
+          CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+            merged[i].push_back({cof0, index << 1});
+          }
+          merged[i].push_back({(index << 2) ^ 1 ^ (r & 1), (index << 1) ^ 1});
+        } else {
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+            merged[i].push_back({cof0, index << 1});
+          }
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+            merged[i].push_back({cof1, (index << 1) ^ 1});
+          }
+        }
+      }
+    }
+    for(int i = nInputs - 1; i >= 0; i--) {
+      for(auto p: merged[i]) {
+        CopyFunc(p.second, p.first >> 1, p.first & 1, i);
+      }
+    }
+  }
 };
 
 class TTOSDM : public TTCare{
@@ -895,6 +1013,15 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
 
+  TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
+  std::cout << tt.BDDCountNodes() << std::endl;
+  std::cout << tt.BDDCountNodesOSM(false) << std::endl;
+  std::cout << tt.BDDCountNodesOSM(true) << std::endl;
+  tt.TSM(true);
+  std::cout << tt.BDDCountNodes() << std::endl;
+  tt.GeneratePlaMasked("test.pla");
+  tt.BDDGenerateBlif(inputs, outputs, f);
+
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
   // tt.RandomSiftReo(20);
   // int r1 = tt.BDDCountNodesOSM(false);
@@ -902,15 +1029,15 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.OSM(r2 <= r1);
   // tt.BDDGenerateBlif(inputs, outputs, f);
   
-  TTOSM tt1(onsets, nInputs, pBPats, nBPats, rarity);
-  int r1 = tt1.RandomSiftReo(20);
-  TTOSMC tt2(onsets, nInputs, pBPats, nBPats, rarity);
-  int r2 = tt2.RandomSiftReo(20);
-  if(r1 < r2){
-    tt1.OSM(false);
-    tt1.BDDGenerateBlif(inputs, outputs, f);
-  } else {
-    tt2.OSM(true);
-    tt2.BDDGenerateBlif(inputs, outputs, f);
-  }
+  // TTOSM tt1(onsets, nInputs, pBPats, nBPats, rarity);
+  // int r1 = tt1.RandomSiftReo(20);
+  // TTOSMC tt2(onsets, nInputs, pBPats, nBPats, rarity);
+  // int r2 = tt2.RandomSiftReo(20);
+  // if(r1 < r2){
+  //   tt1.OSM(false);
+  //   tt1.BDDGenerateBlif(inputs, outputs, f);
+  // } else {
+  //   tt2.OSM(true);
+  //   tt2.BDDGenerateBlif(inputs, outputs, f);
+  // }
 }
