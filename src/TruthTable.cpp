@@ -856,6 +856,139 @@ public:
       }
     }
   }
+
+  int IncludeCompl(int index1, int index2, int lev) {
+    int logwidth = nInputs - lev;
+    bool fEq, fCompl;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      fEq = true;
+      fCompl = true;
+      for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+        fEq &= !(caret[nScopeSize * index2 + i] & (t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i]));
+        fCompl &= !(caret[nScopeSize * index2 + i] & (~t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i]));
+      }
+    } else {
+      fEq = !(GetCare(index2, lev) & (GetValue(index1, lev) ^ GetValue(index2, lev)));
+      fCompl = !(GetCare(index2, lev) & (GetValue(index1, lev) ^ ones[logwidth] ^ GetValue(index2, lev)));
+    }
+    return 2 * fCompl + fEq;
+  }
+
+  int BDDCountNodesOSMC() {
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    std::vector<std::vector<int> > vvChildren(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(IsDC(i, 0)) {
+        continue;
+      }
+      int r = BDDCountNodesOne(i, 0);
+      if(r != i << 1) {
+        MergeCare(r >> 1, i, 0);
+      }
+    }
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        if(int r = IncludeCompl(index << 1, (index << 1) ^ 1, i)) {
+          assert(r);
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0 ^ 1 ^ (r & 1));
+        } else if(int r = Include((index << 1) ^ 1, index << 1, i)) {
+          assert(r);
+          MergeCare((index << 1) ^ 1, index << 1, i);
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+          }
+          vvChildren[i-1].push_back(cof1 ^ 1 ^ (r & 1));
+          vvChildren[i-1].push_back(cof1);
+        } else {
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+          }
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof1);
+        }
+      }
+    }
+    BDDRemoveRedundantIndicesFromChildren(vvChildren);
+    int count = 1; // const node
+    for(int i = 0; i < nInputs; i++) {
+      count += vvIndices[i].size();
+    }
+    RestoreCare();
+    return count;
+  }
+
+  void OSMC() {
+    originalt = t;
+    std::vector<std::vector<std::pair<int, int> > > merged(nInputs);
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(IsDC(i, 0)) {
+        for(int j = 0; j < nSize; j++) {
+          t[j + nSize * i] = 0;
+        }
+        continue;
+      }
+      int r = BDDCountNodesOne(i, 0);
+      if(r != i << 1) {
+        MergeCare(r >> 1, i, 0);
+        merged[0].push_back({r, i});
+      }
+    }
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        if(int r = IncludeCompl(index << 1, (index << 1) ^ 1, i)) {
+          assert(r);
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+            merged[i].push_back({cof0, index << 1});
+          }
+          merged[i].push_back({(index << 2) ^ 1 ^ (r & 1), (index << 1) ^ 1});
+        } else if(int r = IncludeCompl((index << 1) ^ 1, index << 1, i)) {
+          assert(r);
+          MergeCare((index << 1) ^ 1, index << 1, i);
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+            merged[i].push_back({cof1, (index << 1) ^ 1});
+          }
+          merged[i].push_back({(index << 2) ^ 2 ^ 1 ^ (r & 1), index << 1});
+        } else {
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+            merged[i].push_back({cof0, index << 1});
+          }
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+            merged[i].push_back({cof1, (index << 1) ^ 1});
+          }
+        }
+      }
+    }
+    for(int i = nInputs - 1; i >= 0; i--) {
+      for(auto p: merged[i]) {
+        CopyFunc(p.second, p.first >> 1, p.first & 1, i);
+      }
+    }
+  }
 };
 
 class TTOSDM : public TTCare{
@@ -876,6 +1009,15 @@ public:
   }
 };
 
+class TTOSMC : public TTCare{
+public:
+  TTOSMC(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+
+  int BDDCountNodes() override {
+    return BDDCountNodesOSMC();
+  }
+};
+
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   // TT tt(onsets, nInputs);
@@ -884,12 +1026,12 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
   
-  TTOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TTOSMC tt(onsets, nInputs, pBPats, nBPats, rarity);
   // std::cout << tt.BDDCountNodes() << std::endl;
   // // tt.SiftReo();
   tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
-  tt.OSM();
+  tt.OSMC();
   // std::cout << tt.BDDCountNodes() << std::endl;
   tt.BDDGenerateBlif(inputs, outputs, f);
 }
