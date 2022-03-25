@@ -542,7 +542,7 @@ public:
     return (caret[index] >> pos) & ones[logwidth];
   }
 
-  bool CheckDC(int index, int lev) {
+  bool IsDC(int index, int lev) {
     if(nInputs - lev > lww) {
       int nScopeSize = 1 << (nInputs - lev - lww);
       for(int i = 0; i < nScopeSize; i++) {
@@ -579,7 +579,7 @@ public:
     }
   }
 
-  void BDDRemoveRedundantIndicesFromChildren(std::vector<std::vector<int> > const &children) {
+  void BDDRemoveRedundantIndicesFromChildren(std::vector<std::vector<int> > const &vvChildren) {
     std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     std::map<int, std::pair<int, int> > skipped;
     for(int i = nInputs - 2; i >= 0; i--) {
@@ -587,25 +587,25 @@ public:
       std::map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
       for(uint j = 0; j < vvIndices[i].size(); j++) {
         std::pair<int, int> cof0, cof1;
-        int cof0index = children[i][j+j] >> 1;
-        int cof1index = children[i][j+j+1] >> 1;
-        bool cof0c = children[i][j+j] & 1;
-        bool cof1c = children[i][j+j+1] & 1;
+        int cof0index = vvChildren[i][j+j] >> 1;
+        int cof1index = vvChildren[i][j+j+1] >> 1;
+        bool cof0c = vvChildren[i][j+j] & 1;
+        bool cof1c = vvChildren[i][j+j+1] & 1;
         if(cof0index < 0) {
-          cof0 = {nInputs, children[i][j+j]};
+          cof0 = {nInputs, vvChildren[i][j+j]};
         } else if(skipped.count(cof0index)) {
           cof0 = skipped[cof0index];
           cof0.second ^= cof0c;
         } else {
-          cof0 = {i+1, children[i][j+j]};
+          cof0 = {i+1, vvChildren[i][j+j]};
         }
         if(cof1index < 0) {
-          cof1 = {nInputs, children[i][j+j+1]};
+          cof1 = {nInputs, vvChildren[i][j+j+1]};
         } else if(skipped.count(cof1index)) {
           cof1 = skipped[cof1index];
           cof1.second ^= cof1c;
         } else {
-          cof1 = {i+1, children[i][j+j+1]};
+          cof1 = {i+1, vvChildren[i][j+j+1]};
         }
         if(cof0 == cof1) {
           nextskipped[vvIndices[i][j]] = cof0;
@@ -632,9 +632,9 @@ public:
   int BDDCountNodesDC() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > children(nInputs);
+    std::vector<std::vector<int> > vvChildren(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(CheckDC(i, 0)) {
+      if(IsDC(i, 0)) {
         continue;
       }
       int r = BDDCountNodesOne(i, 0);
@@ -645,32 +645,32 @@ public:
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0, cof1;
-        bool cof0dc = CheckDC(index << 1, i);
+        bool cof0dc = IsDC(index << 1, i);
         if(!cof0dc) {
           cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
             MergeCare(cof0 >> 1, index << 1, i);
           }
-          children[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0);
         }
-        bool cof1dc = CheckDC((index << 1) ^ 1, i);
+        bool cof1dc = IsDC((index << 1) ^ 1, i);
         if(!cof1dc) {
           cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
           if(cof1 != ((index << 2) ^ 2)) {
             MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
           }
-          children[i-1].push_back(cof1);
+          vvChildren[i-1].push_back(cof1);
         }
         assert(!cof0dc || !cof1dc);
         if(cof0dc) {
-          children[i-1].push_back(cof1);
+          vvChildren[i-1].push_back(cof1);
         }
         if(cof1dc) {
-          children[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0);
         }
       }
     }
-    BDDRemoveRedundantIndicesFromChildren(children);
+    BDDRemoveRedundantIndicesFromChildren(vvChildren);
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
       count += vvIndices[i].size();
@@ -685,7 +685,7 @@ public:
     vvIndices.clear();
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(CheckDC(i, 0)) {
+      if(IsDC(i, 0)) {
         for(int j = 0; j < nSize; j++) {
           t[j + nSize * i] = 0;
         }
@@ -700,7 +700,7 @@ public:
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0, cof1;
-        bool cof0dc = CheckDC(index << 1, i);
+        bool cof0dc = IsDC(index << 1, i);
         if(!cof0dc) {
           cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
@@ -708,7 +708,7 @@ public:
             merged[i].push_back({cof0, index << 1});
           }
         }
-        bool cof1dc = CheckDC((index << 1) ^ 1, i);
+        bool cof1dc = IsDC((index << 1) ^ 1, i);
         if(!cof1dc) {
           cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
           if(cof1 != ((index << 2) ^ 2)) {
@@ -749,9 +749,9 @@ public:
   int BDDCountNodesOSM() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > children(nInputs);
+    std::vector<std::vector<int> > vvChildren(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(CheckDC(i, 0)) {
+      if(IsDC(i, 0)) {
         continue;
       }
       int r = BDDCountNodesOne(i, 0);
@@ -767,16 +767,16 @@ public:
           if(cof0 != index << 2) {
             MergeCare(cof0 >> 1, index << 1, i);
           }
-          children[i-1].push_back(cof0);
-          children[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0);
         } else if(Include((index << 1) ^ 1, index << 1, i)) {
           MergeCare((index << 1) ^ 1, index << 1, i);
           int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
           if(cof1 != ((index << 2) ^ 2)) {
             MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
           }
-          children[i-1].push_back(cof1);
-          children[i-1].push_back(cof1);
+          vvChildren[i-1].push_back(cof1);
+          vvChildren[i-1].push_back(cof1);
         } else {
           int cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
@@ -786,12 +786,12 @@ public:
           if(cof1 != ((index << 2) ^ 2)) {
             MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
           }
-          children[i-1].push_back(cof0);
-          children[i-1].push_back(cof1);
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof1);
         }
       }
     }
-    BDDRemoveRedundantIndicesFromChildren(children);
+    BDDRemoveRedundantIndicesFromChildren(vvChildren);
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
       count += vvIndices[i].size();
@@ -806,7 +806,7 @@ public:
     vvIndices.clear();
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(CheckDC(i, 0)) {
+      if(IsDC(i, 0)) {
         for(int j = 0; j < nSize; j++) {
           t[j + nSize * i] = 0;
         }
