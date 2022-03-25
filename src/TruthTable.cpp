@@ -862,7 +862,7 @@ public:
     }
   }
 
-  bool Intersect(int index1, int index2, int lev, bool fCompl = false) {
+  int Intersect(int index1, int index2, int lev, bool fCompl) {
     int logwidth = nInputs - lev;
     bool fEq = true;
     if(logwidth > lww) {
@@ -909,6 +909,70 @@ public:
       value1 |= cvalue & value2;
       SetValue(index1, lev, value1);
     }
+  }
+
+  int BDDCountNodesTSM(bool fCompl) {
+    Save(3);
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    std::vector<std::vector<int> > vvChildren(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(IsDC(i, 0)) {
+        continue;
+      }
+      int r = BDDCountNodesOne(i, 0);
+      if(r != i << 1) {
+        MergeCare(r >> 1, i, 0);
+      }
+    }
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        if(int r = Include(index << 1, (index << 1) ^ 1, i, fCompl)) {
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0 ^ 1 ^ (r & 1));
+        } else if(int r = Include((index << 1) ^ 1, index << 1, i, fCompl)) {
+          MergeCare((index << 1) ^ 1, index << 1, i);
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+          }
+          vvChildren[i-1].push_back(cof1 ^ 1 ^ (r & 1));
+          vvChildren[i-1].push_back(cof1);
+        } else if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
+          CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
+          MergeCare(index << 1, (index << 1) ^ 1, i);
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof0 ^ 1 ^ (r & 1));
+        } else {
+          int cof0 = BDDCountNodesOne(index << 1, i);
+          if(cof0 != index << 2) {
+            MergeCare(cof0 >> 1, index << 1, i);
+          }
+          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
+          if(cof1 != ((index << 2) ^ 2)) {
+            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
+          }
+          vvChildren[i-1].push_back(cof0);
+          vvChildren[i-1].push_back(cof1);
+        }
+      }
+    }
+    BDDRemoveRedundantIndicesFromChildren(vvChildren);
+    int count = 1; // const node
+    for(int i = 0; i < nInputs; i++) {
+      count += vvIndices[i].size();
+    }
+    Load(3);
+    return count;
   }
 
   void TSM(bool fCompl) {
@@ -1005,6 +1069,15 @@ public:
   }
 };
 
+class TTTSM : public TTCare{
+public:
+  TTTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+
+  int BDDCountNodes() override {
+    return BDDCountNodesTSM(true);
+  }
+};
+
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   // TT tt(onsets, nInputs);
@@ -1013,13 +1086,18 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
 
-  TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
-  std::cout << tt.BDDCountNodes() << std::endl;
-  std::cout << tt.BDDCountNodesOSM(false) << std::endl;
-  std::cout << tt.BDDCountNodesOSM(true) << std::endl;
+  // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // std::cout << tt.BDDCountNodesOSM(false) << std::endl;
+  // std::cout << tt.BDDCountNodesOSM(true) << std::endl;
+  // tt.TSM(true);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // tt.GeneratePlaMasked("test.pla");
+  // tt.BDDGenerateBlif(inputs, outputs, f);
+
+  TTTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  tt.RandomSiftReo(20);
   tt.TSM(true);
-  std::cout << tt.BDDCountNodes() << std::endl;
-  tt.GeneratePlaMasked("test.pla");
   tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
