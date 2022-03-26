@@ -123,7 +123,7 @@ public:
     t[index] ^= value << pos;
   }
 
-  void CopyFunc(int index1, int index2, bool fCompl, int lev) {
+  void CopyFunc(int index1, int index2, int lev, bool fCompl) {
     assert(index1 >= 0);
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
@@ -165,7 +165,7 @@ public:
       count = std::bitset<32>(GetValue(index, lev)).count();
     }
     bool majority = count > (1 << (logwidth - 1));
-    CopyFunc(index, -1, majority, lev);
+    CopyFunc(index, -1, lev, majority);
   }
 
   int BDDFind(int index, int lev) {
@@ -725,20 +725,39 @@ public:
   void Merge() {
     for(int i = nInputs - 1; i >= 0; i--) {
       for(auto it = vvIndicesMerged[i].rbegin(); it != vvIndicesMerged[i].rend(); it++) {
-        CopyFunc((*it).second, (*it).first >> 1, (*it).first & 1, i);
+        CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
       }
     }
+    vvIndicesMerged.clear();
   }
 
-  int BDDCountNodesOSDM() {
+  void BDDCountNodesStartup() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > vvChildren(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
         BDDCountNodesCareOne(i, 0);
       }
     }
+  }
+
+  void OptimizationStartup() {
+    originalt = t;
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    vvIndicesMerged.resize(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(!IsDC(i, 0)) {
+        BDDCountNodesCareOne(i, 0);
+      } else {
+        ShiftToMajority(i, 0);
+      }
+    }
+  }
+
+  int BDDCountNodesOSDM() {
+    BDDCountNodesStartup();
+    std::vector<std::vector<int> > vvChildren(nInputs);
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0index = index << 1;
@@ -764,17 +783,7 @@ public:
   }
 
   void OSDM() {
-    originalt = t;
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    vvIndicesMerged.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDCountNodesCareOne(i, 0);
-      } else {
-        ShiftToMajority(i, 0);
-      }
-    }
+    OptimizationStartup();
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0index = index << 1;
@@ -792,7 +801,6 @@ public:
       }
     }
     Merge();
-    vvIndicesMerged.clear();
   }
 
   int Include(int index1, int index2, int lev, bool fCompl) {
@@ -816,14 +824,8 @@ public:
   }
 
   int BDDCountNodesOSM(bool fCompl) {
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
+    BDDCountNodesStartup();
     std::vector<std::vector<int> > vvChildren(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDCountNodesCareOne(i, 0);
-      }
-    }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0index = index << 1;
@@ -851,17 +853,7 @@ public:
   }
 
   void OSM(bool fCompl) {
-    originalt = t;
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    vvIndicesMerged.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDCountNodesCareOne(i, 0);
-      } else {
-        ShiftToMajority(i, 0);
-      }
-    }
+    OptimizationStartup();
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0index = index << 1;
@@ -881,7 +873,6 @@ public:
       }
     }
     Merge();
-    vvIndicesMerged.clear();
   }
 
   int Intersect(int index1, int index2, int lev, bool fCompl, bool fEq = true) {
@@ -903,7 +894,7 @@ public:
     return 2 * fCompl + fEq;
   }
 
-  void CopyFuncMasked(int index1, int index2, bool fCompl, int lev) {
+  void CopyFuncMasked(int index1, int index2, int lev, bool fCompl) {
     assert(index1 >= 0);
     assert(index2 >= 0);
     int logwidth = nInputs - lev;
@@ -934,41 +925,24 @@ public:
 
   int BDDCountNodesTSM(bool fCompl) {
     Save(3);
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
+    BDDCountNodesStartup();
     std::vector<std::vector<int> > vvChildren(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(IsDC(i, 0)) {
-        continue;
-      }
-      int r = BDDCountNodesOne(i, 0);
-      if(r != i << 1) {
-        MergeCare(r >> 1, i, 0);
-      }
-    }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
-          CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
-          MergeCare(index << 1, (index << 1) ^ 1, i);
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-          }
-          vvChildren[i-1].push_back(cof0);
-          vvChildren[i-1].push_back(cof0 ^ !(r & 1));
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
+        int cof0, cof1;
+        if(int r = Intersect(cof0index, cof1index, i, fCompl)) {
+          CopyFuncMasked(cof0index, cof1index, i, !(r & 1));
+          MergeCare(cof0index, cof1index, i);
+          cof0 = BDDCountNodesCareOne(cof0index, i);
+          cof1 = cof0 ^ !(r & 1);
         } else {
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-          }
-          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
-          if(cof1 != ((index << 2) ^ 2)) {
-            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
-          }
-          vvChildren[i-1].push_back(cof0);
-          vvChildren[i-1].push_back(cof1);
+          cof0 = BDDCountNodesCareOne(cof0index, i);
+          cof1 = BDDCountNodesCareOne(cof1index, i);
         }
+        vvChildren[i-1].push_back(cof0);
+        vvChildren[i-1].push_back(cof1);
       }
     }
     BDDRemoveRedundantIndicesFromChildren(vvChildren);
@@ -977,57 +951,23 @@ public:
   }
 
   void TSM(bool fCompl) {
-    originalt = t;
-    std::vector<std::vector<std::pair<int, int> > > merged(nInputs);
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(IsDC(i, 0)) {
-        if(nSize) {
-          for(int j = 0; j < nSize; j++) {
-            t[j + nSize * i] = 0;
-          }
-        } else {
-          SetValue(i, 0, 0);
-        }
-        continue;
-      }
-      int r = BDDCountNodesOne(i, 0);
-      if(r != i << 1) {
-        MergeCare(r >> 1, i, 0);
-        merged[0].push_back({r, i});
-      }
-    }
+    OptimizationStartup();
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
-          CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
-          MergeCare(index << 1, (index << 1) ^ 1, i);
-          merged[i].push_back({(index << 2) ^ !(r & 1), (index << 1) ^ 1});
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-            merged[i].push_back({cof0, index << 1});
-          }
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
+        if(int r = Intersect(cof0index, cof1index, i, fCompl)) {
+          CopyFuncMasked(cof0index, cof1index, i, !(r & 1));
+          MergeCare(cof0index, cof1index, i);
+          vvIndicesMerged[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+          BDDCountNodesCareOne(cof0index, i);
         } else {
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-            merged[i].push_back({cof0, index << 1});
-          }
-          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
-          if(cof1 != ((index << 2) ^ 2)) {
-            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
-            merged[i].push_back({cof1, (index << 1) ^ 1});
-          }
+          BDDCountNodesCareOne(cof0index, i);
+          BDDCountNodesCareOne(cof1index, i);
         }
       }
     }
-    for(int i = nInputs - 1; i >= 0; i--) {
-      for(auto it = merged[i].rbegin(); it != merged[i].rend(); it++) {
-        CopyFunc((*it).second, (*it).first >> 1, (*it).first & 1, i);
-      }
-    }
+    Merge();
   }
 
   void TSMNew(bool fCompl) {
@@ -1135,7 +1075,7 @@ public:
         }
         bool fComplCof = cof0c ^ cof1c;
         if(int r = Intersect(cof0index, cof1index, i, fComplCof || fCompl, !fComplCof || fCompl)) {
-          CopyFuncMasked(cof0index, cof1index, !(r & 1), i);
+          CopyFuncMasked(cof0index, cof1index, i, !(r & 1));
           MergeCare(cof0index, cof1index, i);
           merged[i].insert(merged[i].begin(), {(cof0index << 1) ^ 1 ^ (r & 1), cof1index});
           int cof0 = BDDCountNodesOne(cof0index, i);
@@ -1162,7 +1102,7 @@ public:
     }
     for(int i = nInputs - 1; i >= 0; i--) {
       for(auto p: merged[i]) {
-        CopyFunc(p.second, p.first >> 1, p.first & 1, i);
+        CopyFunc(p.second, p.first >> 1, i, p.first & 1);
       }
     }
   }
@@ -1227,9 +1167,9 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.GeneratePlaMasked("test.pla");
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TTOSMC tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TTTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
-  tt.OSM(true);
+  tt.TSM(true);
   tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
