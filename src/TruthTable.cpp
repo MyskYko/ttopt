@@ -224,6 +224,14 @@ public:
       vvIndices[i] = vIndicesNew;
     }
   }
+
+  int BDDNodeCount() {
+    int count = 1; // const node
+    for(int i = 0; i < nInputs; i++) {
+      count += vvIndices[i].size();
+    }
+    return count;
+  }
   
   virtual int BDDCountNodes() {
     vvIndices.clear();
@@ -242,11 +250,7 @@ public:
       }
     }
     BDDRemoveRedundantIndices(vvIndicesRedundant);
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      count += vvIndices[i].size();
-    }
-    return count;
+    return BDDNodeCount();
   }
 
   bool Imply(int index1, int index2, int lev) {
@@ -714,40 +718,30 @@ public:
     vvIndices.resize(nInputs);
     std::vector<std::vector<int> > vvChildren(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(IsDC(i, 0)) {
-        continue;
+      if(!IsDC(i, 0)) {
+        BDDCountNodesCareOne(i, 0);
       }
-      BDDCountNodesCareOne(i, 0);
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0, cof1;
-        bool cof0dc = IsDC(index << 1, i);
-        if(!cof0dc) {
-          cof0 = BDDCountNodesCareOne(index << 1, i);
-          vvChildren[i-1].push_back(cof0);
-        }
-        bool cof1dc = IsDC((index << 1) ^ 1, i);
-        if(!cof1dc) {
+        if(IsDC(index << 1, i)) {
           cof1 = BDDCountNodesCareOne((index << 1) ^ 1, i);
-          vvChildren[i-1].push_back(cof1);
+          cof0 = cof1;
+        } else if(IsDC((index << 1) ^ 1, i)) {
+          cof0 = BDDCountNodesCareOne(index << 1, i);
+          cof1 = cof0;
+        } else {
+          cof0 = BDDCountNodesCareOne(index << 1, i);
+          cof1 = BDDCountNodesCareOne((index << 1) ^ 1, i);
         }
-        assert(!cof0dc || !cof1dc);
-        if(cof0dc) {
-          vvChildren[i-1].push_back(cof1);
-        }
-        if(cof1dc) {
-          vvChildren[i-1].push_back(cof0);
-        }
+        vvChildren[i-1].push_back(cof0);
+        vvChildren[i-1].push_back(cof1);
       }
     }
     BDDRemoveRedundantIndicesFromChildren(vvChildren);
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      count += vvIndices[i].size();
-    }
     RestoreCare();
-    return count;
+    return BDDNodeCount();
   }
 
   void OSDM() {
@@ -756,7 +750,9 @@ public:
     vvIndices.resize(nInputs);
     vvIndicesMerged.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
-      if(IsDC(i, 0)) {
+      if(!IsDC(i, 0)) {
+        BDDCountNodesCareOne(i, 0);
+      } else {
         if(nSize) {
           for(int j = 0; j < nSize; j++) {
             t[j + nSize * i] = 0;
@@ -764,9 +760,7 @@ public:
         } else {
           SetValue(i, 0, 0);
         }
-        continue;
       }
-      BDDCountNodesCareOne(i, 0);
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
@@ -852,12 +846,8 @@ public:
       }
     }
     BDDRemoveRedundantIndicesFromChildren(vvChildren);
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      count += vvIndices[i].size();
-    }
     RestoreCare();
-    return count;
+    return BDDNodeCount();
   }
 
   void OSM(bool fCompl) {
@@ -1009,12 +999,8 @@ public:
       }
     }
     BDDRemoveRedundantIndicesFromChildren(vvChildren);
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      count += vvIndices[i].size();
-    }
     Load(3);
-    return count;
+    return BDDNodeCount();
   }
 
   void TSM(bool fCompl) {
@@ -1268,9 +1254,9 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.GeneratePlaMasked("test.pla");
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TTTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TTOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
-  tt.TSM(true);
+  tt.OSDM();
   tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
