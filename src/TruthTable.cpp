@@ -8,6 +8,7 @@
 #include <random>
 #include <cassert>
 #include <map>
+#include <bitset>
 
 extern std::string BinaryToString(int bin, int size);
 
@@ -149,6 +150,22 @@ public:
       }
       SetValue(index1, lev, value);
     }
+  }
+
+  void ShiftToMajority(int index, int lev) {
+    assert(index >= 0);
+    int logwidth = nInputs - lev;
+    int count = 0;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        count += std::bitset<32>(t[nScopeSize * index + i]).count();
+      }
+    } else {
+      count = std::bitset<32>(GetValue(index, lev)).count();
+    }
+    bool majority = count > (1 << (logwidth - 1));
+    CopyFunc(index, -1, majority, lev);
   }
 
   int BDDFind(int index, int lev) {
@@ -755,13 +772,7 @@ public:
       if(!IsDC(i, 0)) {
         BDDCountNodesCareOne(i, 0);
       } else {
-        if(nSize) {
-          for(int j = 0; j < nSize; j++) {
-            t[j + nSize * i] = 0;
-          }
-        } else {
-          SetValue(i, 0, 0);
-        }
+        ShiftToMajority(i, 0);
       }
     }
     for(int i = 1; i < nInputs; i++) {
