@@ -724,16 +724,18 @@ public:
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
         int cof0, cof1;
-        if(IsDC(index << 1, i)) {
-          cof1 = BDDCountNodesCareOne((index << 1) ^ 1, i);
+        if(IsDC(cof0index, i)) {
+          cof1 = BDDCountNodesCareOne(cof1index, i);
           cof0 = cof1;
-        } else if(IsDC((index << 1) ^ 1, i)) {
-          cof0 = BDDCountNodesCareOne(index << 1, i);
+        } else if(IsDC(cof1index, i)) {
+          cof0 = BDDCountNodesCareOne(cof0index, i);
           cof1 = cof0;
         } else {
-          cof0 = BDDCountNodesCareOne(index << 1, i);
-          cof1 = BDDCountNodesCareOne((index << 1) ^ 1, i);
+          cof0 = BDDCountNodesCareOne(cof0index, i);
+          cof1 = BDDCountNodesCareOne(cof1index, i);
         }
         vvChildren[i-1].push_back(cof0);
         vvChildren[i-1].push_back(cof1);
@@ -764,15 +766,17 @@ public:
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        if(IsDC(index << 1, i)) {
-          vvIndicesMerged[i].push_back({(index << 2) ^ 2, index << 1});
-          BDDCountNodesCareOne((index << 1) ^ 1, i);
-        } else if(IsDC((index << 1) ^ 1, i)) {
-          vvIndicesMerged[i].push_back({index << 2, (index << 1) ^ 1});
-          BDDCountNodesCareOne(index << 1, i);
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
+        if(IsDC(cof0index, i)) {
+          vvIndicesMerged[i].push_back({cof1index << 1, cof0index});
+          BDDCountNodesCareOne(cof1index, i);
+        } else if(IsDC(cof1index, i)) {
+          vvIndicesMerged[i].push_back({cof0index << 1, cof1index});
+          BDDCountNodesCareOne(cof0index, i);
         } else {
-          BDDCountNodesCareOne(index << 1, i);
-          BDDCountNodesCareOne((index << 1) ^ 1, i);
+          BDDCountNodesCareOne(cof0index, i);
+          BDDCountNodesCareOne(cof1index, i);
         }
       }
     }
