@@ -19,6 +19,7 @@ public:
 
   int nInputs;
   int nSize;
+  int nTotalSize;
   int nOutputs;
   std::vector<word> t;
 
@@ -33,15 +34,28 @@ public:
   static const word swapmask[];
 
   TT(std::vector<std::vector<int> > const &onsets, int nInputs): nInputs(nInputs) {
-    assert(nInputs >= lww);
-    nSize = 1 << (nInputs - lww);
     nOutputs = onsets.size();
-    t.resize(nSize * nOutputs);
-    for(int i = 0; i < nOutputs; i++) {
-      for(int pat: onsets[i]) {
-        int index = pat / ww;
-        int pos = pat % ww;
-        t[nSize * i + index] |= 1 << pos;
+    if(nInputs >= lww) {
+      nSize = 1 << (nInputs - lww);
+      nTotalSize = nSize * nOutputs;
+      t.resize(nTotalSize);
+      for(int i = 0; i < nOutputs; i++) {
+        for(int pat: onsets[i]) {
+          int index = pat / ww;
+          int pos = pat % ww;
+          t[nSize * i + index] |= 1 << pos;
+        }
+      }
+    } else {
+      nSize = 0;
+      nTotalSize = ((1 << nInputs) * nOutputs + ww - 1) / ww;
+      t.resize(nTotalSize);
+      for(int i = 0; i < nOutputs; i++) {
+        int padding = i * (1 << nInputs);
+        for(int pat: onsets[i]) {
+          int pos = (padding + pat) % ww;
+          t[padding / ww] |= 1 << pos;
+        }
       }
     }
     vLevels.resize(nInputs);
@@ -66,12 +80,23 @@ public:
     std::ofstream f(filename);
     f << ".i " << nInputs << std::endl;
     f << ".o " << nOutputs << std::endl;
-    for(int index = 0; index < nSize; index++) {
-      for(int pos = 0; pos < ww; pos++) {
-        int pat = (index << lww) + pos;
-        f << BinaryToString(pat, nInputs) << " ";
+    if(nSize) {
+      for(int index = 0; index < nSize; index++) {
+        for(int pos = 0; pos < ww; pos++) {
+          int pat = (index << lww) + pos;
+          f << BinaryToString(pat, nInputs) << " ";
+          for(int i = 0; i < nOutputs; i++) {
+            f << ((t[nSize * i + index] >> pos) & 1);
+          }
+          f << std::endl;
+        }
+      }
+    } else {
+      for(int pos = 0; pos < (1 << nInputs); pos++) {
+        f << BinaryToString(pos, nInputs) << " ";
         for(int i = 0; i < nOutputs; i++) {
-          f << ((t[nSize * i + index] >> pos) & 1);
+          int padding = i * (1 << nInputs);
+          f << ((t[padding / ww] >> (pos + padding % ww)) & 1);
         }
         f << std::endl;
       }
@@ -294,19 +319,19 @@ public:
     std::swap(*it0, *it1);
     if(nInputs - lev - 1 > lww) {
       int nScopeSize = 1 << (nInputs - lev - 2 - lww);
-      for(int i = nScopeSize; i < nSize * nOutputs; i += (nScopeSize << 2)) {
+      for(int i = nScopeSize; i < nTotalSize; i += (nScopeSize << 2)) {
         for(int j = 0; j < nScopeSize; j++) {
           std::swap(t[i + j], t[i + nScopeSize + j]);
         }
       }
     } else if(nInputs - lev - 1 == lww) {
-      for(int i = 0; i < nSize * nOutputs; i += 2) {
+      for(int i = 0; i < nTotalSize; i += 2) {
         t[i+1] ^= t[i] >> (ww / 2);
         t[i] ^= t[i+1] << (ww / 2);
         t[i+1] ^= t[i] >> (ww / 2);
       }
     } else {
-      for(int i = 0; i < nSize * nOutputs; i++) {
+      for(int i = 0; i < nTotalSize; i++) {
         int d = nInputs - lev - 2;
         int shamt = 1 << d;
         t[i] ^= (t[i] >> shamt) & swapmask[d];
@@ -426,7 +451,11 @@ public:
   std::vector<std::vector<word> > savedcare;
 
   TTCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
-    care.resize(nSize);
+    if(nSize) {
+      care.resize(nSize);
+    } else {
+      care.resize(1);
+    }
     std::vector<int> count(1 << nInputs);
     for(int i = 0; i < nBPats; i++) {
       for(int j = 0; j < 8; j++) {
@@ -443,15 +472,21 @@ public:
         }
       }
     }
-    for(int i = 0; i < nOutputs; i++) {
-      caret.insert(caret.end(), care.begin(), care.end());
-    }
+    RestoreCare();
   }
 
   void RestoreCare() {
     caret.clear();
-    for(int i = 0; i < nOutputs; i++) {
-      caret.insert(caret.end(), care.begin(), care.end());
+    if(nSize) {
+      for(int i = 0; i < nOutputs; i++) {
+        caret.insert(caret.end(), care.begin(), care.end());
+      }
+    } else {
+      caret.resize(nTotalSize);
+      for(int i = 0; i < nOutputs; i++) {
+        int padding = i * (1 << nInputs);
+        caret[padding / ww] |= care[0] << (padding % ww);
+      }
     }
   }
 
@@ -485,7 +520,7 @@ public:
         care[i+1] ^= care[i] >> (ww / 2);
       }
     } else {
-      for(int i = 0; i < nSize; i++) {
+      for(int i = 0; i < nSize || (i == 0 && !nSize); i++) {
         int d = nInputs - lev - 2;
         int shamt = 1 << d;
         care[i] ^= (care[i] >> shamt) & swapmask[d];
@@ -500,11 +535,19 @@ public:
     std::ofstream f(filename);
     f << ".i " << nInputs << std::endl;
     f << ".o 1" << std::endl;
-    for(int index = 0; index < nSize; index++) {
-      for(int pos = 0; pos < ww; pos++) {
-        int pat = (index << lww) + pos;
-        f << BinaryToString(pat, nInputs) << " ";
-        f << ((care[index] >> pos) & 1);
+    if(nSize) {
+      for(int index = 0; index < nSize; index++) {
+        for(int pos = 0; pos < ww; pos++) {
+          int pat = (index << lww) + pos;
+          f << BinaryToString(pat, nInputs) << " ";
+          f << ((care[index] >> pos) & 1);
+          f << std::endl;
+        }
+      }
+    } else {
+      for(int pos = 0; pos < (1 << nInputs); pos++) {
+        f << BinaryToString(pos, nInputs) << " ";
+        f << ((care[0] >> pos) & 1);
         f << std::endl;
       }
     }
@@ -514,17 +557,30 @@ public:
     std::ofstream f(filename);
     f << ".i " << nInputs << std::endl;
     f << ".o " << nOutputs << std::endl;
-    for(int index = 0; index < nSize; index++) {
-      for(int pos = 0; pos < ww; pos++) {
-        int pat = (index << lww) + pos;
-        f << BinaryToString(pat, nInputs) << " ";
-        if((care[index] >> pos) & 1) {
+    if(nSize) {
+      for(int index = 0; index < nSize; index++) {
+        for(int pos = 0; pos < ww; pos++) {
+          int pat = (index << lww) + pos;
+          f << BinaryToString(pat, nInputs) << " ";
           for(int i = 0; i < nOutputs; i++) {
-            f << ((t[nSize * i + index] >> pos) & 1);
+            if((care[index] >> pos) & 1) {
+              f << ((t[nSize * i + index] >> pos) & 1);
+            } else {
+              f << ((originalt[nSize * i + index] >> pos) & 1);
+            }
           }
-        } else {
-          for(int i = 0; i < nOutputs; i++) {
-            f << ((originalt[nSize * i + index] >> pos) & 1);
+          f << std::endl;
+        }
+      }
+    } else {
+      for(int pos = 0; pos < (1 << nInputs); pos++) {
+        f << BinaryToString(pos, nInputs) << " ";
+        for(int i = 0; i < nOutputs; i++) {
+          int padding = i * (1 << nInputs);
+          if((care[0] >> pos) & 1) {
+            f << ((t[padding / ww] >> (pos + padding % ww)) & 1);
+          } else {
+            f << ((originalt[padding / ww] >> (pos + padding % ww)) & 1);
           }
         }
         f << std::endl;
@@ -685,8 +741,12 @@ public:
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(IsDC(i, 0)) {
-        for(int j = 0; j < nSize; j++) {
-          t[j + nSize * i] = 0;
+        if(nSize) {
+          for(int j = 0; j < nSize; j++) {
+            t[j + nSize * i] = 0;
+          }
+        } else {
+          SetValue(i, 0, 0);
         }
         continue;
       }
@@ -812,8 +872,12 @@ public:
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(IsDC(i, 0)) {
-        for(int j = 0; j < nSize; j++) {
-          t[j + nSize * i] = 0;
+        if(nSize) {
+          for(int j = 0; j < nSize; j++) {
+            t[j + nSize * i] = 0;
+          }
+        } else {
+          SetValue(i, 0, 0);
         }
         continue;
       }
@@ -982,8 +1046,12 @@ public:
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(IsDC(i, 0)) {
-        for(int j = 0; j < nSize; j++) {
-          t[j + nSize * i] = 0;
+        if(nSize) {
+          for(int j = 0; j < nSize; j++) {
+            t[j + nSize * i] = 0;
+          }
+        } else {
+          SetValue(i, 0, 0);
         }
         continue;
       }
@@ -1085,13 +1153,19 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // // tt.SiftReo();
   // tt.RandomSiftReo(20);
   // std::cout << tt.BDDCountNodes() << std::endl;
+  // tt.GeneratePla("test.pla");
 
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // tt.RandomSiftReo(20);
+  // std::cout << tt.BDDCountNodes() << std::endl;
+  // tt.OSM(true);
   // std::cout << tt.BDDCountNodes() << std::endl;
   // std::cout << tt.BDDCountNodesOSM(false) << std::endl;
   // std::cout << tt.BDDCountNodesOSM(true) << std::endl;
   // tt.TSM(true);
   // std::cout << tt.BDDCountNodes() << std::endl;
+  // tt.GeneratePlaCare("care.pla");
   // tt.GeneratePlaMasked("test.pla");
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
