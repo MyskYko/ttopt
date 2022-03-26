@@ -990,23 +990,7 @@ public:
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        if(int r = Include(index << 1, (index << 1) ^ 1, i, fCompl)) {
-          MergeCare(index << 1, (index << 1) ^ 1, i);
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-          }
-          vvChildren[i-1].push_back(cof0);
-          vvChildren[i-1].push_back(cof0 ^ 1 ^ (r & 1));
-        } else if(int r = Include((index << 1) ^ 1, index << 1, i, fCompl)) {
-          MergeCare((index << 1) ^ 1, index << 1, i);
-          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
-          if(cof1 != ((index << 2) ^ 2)) {
-            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
-          }
-          vvChildren[i-1].push_back(cof1 ^ 1 ^ (r & 1));
-          vvChildren[i-1].push_back(cof1);
-        } else if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
+        if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
           CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
           MergeCare(index << 1, (index << 1) ^ 1, i);
           int cof0 = BDDCountNodesOne(index << 1, i);
@@ -1014,7 +998,7 @@ public:
             MergeCare(cof0 >> 1, index << 1, i);
           }
           vvChildren[i-1].push_back(cof0);
-          vvChildren[i-1].push_back(cof0 ^ 1 ^ (r & 1));
+          vvChildren[i-1].push_back(cof0 ^ !(r & 1));
         } else {
           int cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
@@ -1062,31 +1046,15 @@ public:
     }
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
-        if(int r = Include(index << 1, (index << 1) ^ 1, i, fCompl)) {
-          MergeCare(index << 1, (index << 1) ^ 1, i);
-          int cof0 = BDDCountNodesOne(index << 1, i);
-          if(cof0 != index << 2) {
-            MergeCare(cof0 >> 1, index << 1, i);
-            merged[i].push_back({cof0, index << 1});
-          }
-          merged[i].push_back({(index << 2) ^ 1 ^ (r & 1), (index << 1) ^ 1});
-        } else if(int r = Include((index << 1) ^ 1, index << 1, i, fCompl)) {
-          MergeCare((index << 1) ^ 1, index << 1, i);
-          int cof1 = BDDCountNodesOne((index << 1) ^ 1, i);
-          if(cof1 != ((index << 2) ^ 2)) {
-            MergeCare(cof1 >> 1, (index << 1) ^ 1, i);
-            merged[i].push_back({cof1, (index << 1) ^ 1});
-          }
-          merged[i].push_back({(index << 2) ^ 2 ^ 1 ^ (r & 1), index << 1});
-        } else if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
+        if(int r = Intersect(index << 1, (index << 1) ^ 1, i, fCompl)) {
           CopyFuncMasked(index << 1, (index << 1) ^ 1, !(r & 1), i);
           MergeCare(index << 1, (index << 1) ^ 1, i);
+          merged[i].push_back({(index << 2) ^ !(r & 1), (index << 1) ^ 1});
           int cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
             MergeCare(cof0 >> 1, index << 1, i);
             merged[i].push_back({cof0, index << 1});
           }
-          merged[i].push_back({(index << 2) ^ 1 ^ (r & 1), (index << 1) ^ 1});
         } else {
           int cof0 = BDDCountNodesOne(index << 1, i);
           if(cof0 != index << 2) {
@@ -1102,8 +1070,8 @@ public:
       }
     }
     for(int i = nInputs - 1; i >= 0; i--) {
-      for(auto p: merged[i]) {
-        CopyFunc(p.second, p.first >> 1, p.first & 1, i);
+      for(auto it = merged[i].rbegin(); it != merged[i].rend(); it++) {
+        CopyFunc((*it).second, (*it).first >> 1, (*it).first & 1, i);
       }
     }
   }
