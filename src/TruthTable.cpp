@@ -14,9 +14,10 @@ extern std::string BinaryToString(int bin, int size);
 
 class TT {
 public:
-  typedef uint word;
-  const int ww = 32; // word width
-  const int lww = 5; // log word width
+  typedef uint64_t word;
+  const int ww = 64; // word width
+  const int lww = 6; // log word width
+  typedef std::bitset<64> bsw;
 
   int nInputs;
   int nSize;
@@ -44,7 +45,7 @@ public:
         for(int pat: onsets[i]) {
           int index = pat / ww;
           int pos = pat % ww;
-          t[nSize * i + index] |= 1 << pos;
+          t[nSize * i + index] |= 1ull << pos;
         }
       }
     } else {
@@ -55,7 +56,7 @@ public:
         int padding = i * (1 << nInputs);
         for(int pat: onsets[i]) {
           int pos = (padding + pat) % ww;
-          t[padding / ww] |= 1 << pos;
+          t[padding / ww] |= 1ull << pos;
         }
       }
     }
@@ -159,10 +160,10 @@ public:
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize; i++) {
-        count += std::bitset<32>(t[nScopeSize * index + i]).count();
+        count += bsw(t[nScopeSize * index + i]).count();
       }
     } else {
-      count = std::bitset<32>(GetValue(index, lev)).count();
+      count = bsw(GetValue(index, lev)).count();
     }
     bool majority = count > (1 << (logwidth - 1));
     CopyFunc(index, -1, lev, majority);
@@ -451,17 +452,19 @@ public:
   }
 };
 
-const TT::word TT::ones[] = {0x00000001,
-                             0x00000003,
-                             0x0000000f,
-                             0x000000ff,
-                             0x0000ffff,
-                             0xffffffff};
+const TT::word TT::ones[] = {0x0000000000000001ull,
+                             0x0000000000000003ull,
+                             0x000000000000000full,
+                             0x00000000000000ffull,
+                             0x000000000000ffffull,
+                             0x00000000ffffffffull,
+                             0xffffffffffffffffull};
 
-const TT::word TT::swapmask[] = {0x22222222,
-                                 0x0c0c0c0c,
-                                 0x00f000f0,
-                                 0x0000ff00};
+const TT::word TT::swapmask[] = {0x2222222222222222ull,
+                                 0x0c0c0c0c0c0c0c0cull,
+                                 0x00f000f000f000f0ull,
+                                 0x0000ff000000ff00ull,
+                                 0x00000000ffff0000ull};
 
 class TTCare : public TT{
 public:
@@ -491,7 +494,7 @@ public:
         if(count[pat] == rarity) {
           int index = pat / ww;
           int pos = pat % ww;
-          care[index] |= 1 << pos;
+          care[index] |= 1ull << pos;
         }
       }
     }
@@ -1146,17 +1149,14 @@ public:
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   // TT tt(onsets, nInputs);
-  // std::cout << tt.BDDCountNodes() << std::endl;
   // // tt.SiftReo();
   // tt.RandomSiftReo(20);
-  // std::cout << tt.BDDCountNodes() << std::endl;
-  // tt.GeneratePla("test.pla");
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // std::cout << tt.BDDCountNodes() << std::endl;
-  // tt.RandomSiftReo(20);
-  // std::cout << tt.BDDCountNodes() << std::endl;
-  // tt.OSM(true);
+  TTTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  tt.RandomSiftReo(20);
+  tt.TSM(true);
+  tt.BDDGenerateBlif(inputs, outputs, f);
   // std::cout << tt.BDDCountNodes() << std::endl;
   // std::cout << tt.BDDCountNodesOSM(false) << std::endl;
   // std::cout << tt.BDDCountNodesOSM(true) << std::endl;
@@ -1166,10 +1166,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.GeneratePlaMasked("test.pla");
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TTTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.TSMNew(true);
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TTTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.TSMNew(true);
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TTCare tt(onsets, nInputs, pBPats, nBPats, rarity);
   // tt.RandomSiftReo(20);
