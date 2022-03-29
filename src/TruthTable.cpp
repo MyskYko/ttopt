@@ -191,7 +191,7 @@ public:
     CopyFunc(index, -1, lev, majority);
   }
 
-  virtual int BDDFind(int index, int lev) {
+  int BDDFind(int index, int lev) {
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
@@ -311,7 +311,7 @@ public:
   }
 
   int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
-    int r = TruthTable::BDDFind(index, lev);
+    int r = BDDFind(index, lev);
     if(r >= 0) {
       auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
       int i = it - vvIndices[lev].begin();
@@ -1161,7 +1161,7 @@ class TruthTableLevelTSM : public TruthTableCare{
 public:
   TruthTableLevelTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
-  int BDDFind(int index, int lev) override {
+  int BDDFindTSM(int index, int lev) {
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
@@ -1214,7 +1214,7 @@ public:
   }
 
   int BDDBuildOne(int index, int lev) override {
-    int r = BDDFind(index, lev);
+    int r = BDDFindTSM(index, lev);
     if(r >= -2) {
       if(r >= 0) {
         CopyFuncMasked(r >> 1, index, lev, r & 1);
