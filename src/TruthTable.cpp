@@ -191,17 +191,16 @@ public:
     CopyFunc(index, -1, lev, majority);
   }
 
-  int BDDFind(int index, int lev) {
+  virtual int BDDFind(int index, int lev) {
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       bool fZero = true;
       bool fOne = true;
-      word one = ones[lww];
       for(int i = 0; i < nScopeSize && (fZero || fOne); i++) {
         word value = t[nScopeSize * index + i];
-        fZero &= value == 0;
-        fOne &= value == one;
+        fZero &= !value;
+        fOne &= !(~value);
       }
       if(fZero || fOne) {
         return -2 ^ fOne;
@@ -222,18 +221,18 @@ public:
     } else {
       word one = ones[logwidth];
       word value = GetValue(index, lev);
-      if(value == 0) {
+      if(!value) {
         return -2;
       }
-      if(value == one) {
+      if(!(value ^ one)) {
         return -1;
       }
       for(int index2: vvIndices[lev]) {
-        word value2 = GetValue(index2, lev);
-        if(value2 == value) {
+        word value2 = value ^ GetValue(index2, lev);
+        if(!(value2)) {
           return index2 << 1;
         }
-        if((value2 ^ one) == value) {
+        if(!(value2 ^ one)) {
           return (index2 << 1) ^ 1;
         }
       }
@@ -272,14 +271,18 @@ public:
     }
     return count;
   }
-  
-  virtual int BDDBuild() {
+
+  virtual void BDDBuildStartup() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       BDDBuildOne(i, 0);
     }
+  }
+
+  virtual int BDDBuild() {
+    BDDBuildStartup();
+    std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0 = BDDBuildOne(index << 1, i);
@@ -308,7 +311,7 @@ public:
   }
 
   int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
-    int r = BDDFind(index, lev);
+    int r = TruthTable::BDDFind(index, lev);
     if(r >= 0) {
       auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
       int i = it - vvIndices[lev].begin();
@@ -757,7 +760,7 @@ public:
     vvIndicesMerged.clear();
   }
 
-  void BDDBuildStartup() {
+  void BDDBuildStartup() override {
     vvIndices.clear();
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
@@ -1154,6 +1157,97 @@ public:
   }
 };
 
+class TruthTableLevelTSM : public TruthTableCare{
+public:
+  TruthTableLevelTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+
+  int BDDFind(int index, int lev) override {
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      bool fZero = true;
+      bool fOne = true;
+      for(int i = 0; i < nScopeSize && (fZero || fOne); i++) {
+        word value = t[nScopeSize * index + i];
+        word cvalue = caret[nScopeSize * index + i];
+        fZero &= !(value & cvalue);
+        fOne &= !(~value & cvalue);
+      }
+      if(fZero || fOne) {
+        return -2 ^ fOne;
+      }
+      for(int index2: vvIndices[lev]) {
+        bool fEq = true;
+        bool fCompl = true;
+        for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+          word value = t[nScopeSize * index + i] ^ t[nScopeSize * index2 + i];
+          word cvalue = caret[nScopeSize * index + i] & caret[nScopeSize * index2 + i];
+          fEq &= !(value & cvalue);
+          fCompl &= !(~value & cvalue);
+        }
+        if(fEq || fCompl) {
+          return (index2 << 1) ^ fCompl;
+        }
+      }
+    } else {
+      word one = ones[logwidth];
+      word value = GetValue(index, lev);
+      word cvalue = GetCare(index, lev);
+      if(!(value & cvalue)) {
+        return -2;
+      }
+      if(!((value ^ one) & cvalue)) {
+        return -1;
+      }
+      for(int index2: vvIndices[lev]) {
+        word value2 = value ^ GetValue(index2, lev);
+        word cvalue2 = cvalue & GetCare(index2, lev);
+        if(!(value2 & cvalue2)) {
+          return index2 << 1;
+        }
+        if(!((value2 ^ one) & cvalue2)) {
+          return (index2 << 1) ^ 1;
+        }
+      }
+    }
+    return -3;
+  }
+
+  int BDDBuildOne(int index, int lev) override {
+    int r = BDDFind(index, lev);
+    if(r >= -2) {
+      if(r >= 0) {
+        CopyFuncMasked(r >> 1, index, lev, r & 1);
+        MergeCare(r >> 1, index, lev);
+      }
+      if(!vvIndicesMerged.empty()) {
+        vvIndicesMerged[lev].push_back({r, index});
+      }
+      return r;
+    }
+    vvIndices[lev].push_back(index);
+    return index << 1;
+  }
+
+  int BDDBuild() override {
+    Save(3);
+    TruthTable::BDDBuild();
+    Load(3);
+    return BDDNodeCount();
+  }
+
+  void Optimize() override {
+    OptimizationStartup();
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        BDDBuildOne(index << 1, i);
+        BDDBuildOne((index << 1) ^ 1, i);
+      }
+    }
+    Merge();
+  }
+};
+
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   // TruthTable tt(onsets, nInputs);
@@ -1172,7 +1266,7 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity, true);
+  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
   tt.Optimize();
   tt.BDDGenerateBlif(inputs, outputs, f);
@@ -1185,7 +1279,6 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  // std::cout << tt.BDDBuild() << std::endl;
   // std::cout << tt.BDDBuild() << std::endl;
   // tt.GeneratePlaCare("care.pla");
   // tt.GeneratePlaMasked("test.pla");
