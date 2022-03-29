@@ -34,7 +34,7 @@ namespace std
   };
 }
 
-class TT {
+class TruthTable {
 public:
   typedef uint64_t word;
   const int ww = 64; // word width
@@ -57,7 +57,7 @@ public:
   static const word ones[];
   static const word swapmask[];
 
-  TT(std::vector<std::vector<int> > const &onsets, int nInputs): nInputs(nInputs) {
+  TruthTable(std::vector<std::vector<int> > const &onsets, int nInputs): nInputs(nInputs) {
     nOutputs = onsets.size();
     if(nInputs >= lww) {
       nSize = 1 << (nInputs - lww);
@@ -474,7 +474,7 @@ public:
   }
 };
 
-const TT::word TT::ones[] = {0x0000000000000001ull,
+const TruthTable::word TruthTable::ones[] = {0x0000000000000001ull,
                              0x0000000000000003ull,
                              0x000000000000000full,
                              0x00000000000000ffull,
@@ -482,13 +482,13 @@ const TT::word TT::ones[] = {0x0000000000000001ull,
                              0x00000000ffffffffull,
                              0xffffffffffffffffull};
 
-const TT::word TT::swapmask[] = {0x2222222222222222ull,
+const TruthTable::word TruthTable::swapmask[] = {0x2222222222222222ull,
                                  0x0c0c0c0c0c0c0c0cull,
                                  0x00f000f000f000f0ull,
                                  0x0000ff000000ff00ull,
                                  0x00000000ffff0000ull};
 
-class TTCare : public TT{
+class TruthTableCare : public TruthTable{
 public:
   std::vector<word> originalt;
   std::vector<word> caret;
@@ -498,7 +498,7 @@ public:
 
   std::vector<std::vector<word> > savedcare;
 
-  TTCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TT(onsets, nInputs) {
+  TruthTableCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTable(onsets, nInputs) {
     if(nSize) {
       care.resize(nSize);
     } else {
@@ -539,7 +539,7 @@ public:
   }
 
   void Save(uint i) override {
-    TT::Save(i);
+    TruthTable::Save(i);
     if(savedcare.size() < i + 1) {
       savedcare.resize(i + 1);
     }
@@ -547,13 +547,13 @@ public:
   }
 
   void Load(uint i) override {
-    TT::Load(i);
+    TruthTable::Load(i);
     care = savedcare[i];
     RestoreCare();
   }
 
   void SwapLevel(int lev) override {
-    TT::SwapLevel(lev);
+    TruthTable::SwapLevel(lev);
     if(nInputs - lev - 1 > lww) {
       int nScopeSize = 1 << (nInputs - lev - 2 - lww);
       for(int i = nScopeSize; i < nSize; i += (nScopeSize << 2)) {
@@ -856,9 +856,9 @@ public:
   virtual void Optimize() = 0;
 };
 
-class TTOSDM : public TTCare{
+class TruthTableOSDM : public TruthTableCare{
 public:
-  TTOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TTCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+  TruthTableOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
   int BDDCountNodes() override {
     BDDCountNodesStartup();
@@ -909,11 +909,11 @@ public:
   }
 };
 
-class TTOSM : public TTCare{
+class TruthTableOSM : public TruthTableCare{
 public:
   bool fComplOSM;
 
-  TTOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM): TTCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM) {}
+  TruthTableOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM) {}
 
   int BDDCountNodes() override {
     BDDCountNodesStartup();
@@ -968,11 +968,11 @@ public:
   }
 };
 
-class TTTSM : public TTCare{
+class TruthTableTSM : public TruthTableCare{
 public:
   bool fComplTSM;
 
-  TTTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplTSM): TTCare(onsets, nInputs, pBPats, nBPats, rarity), fComplTSM(fComplTSM) {}
+  TruthTableTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplTSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplTSM(fComplTSM) {}
 
   int BDDCountNodes() {
     Save(3);
@@ -1022,11 +1022,11 @@ public:
   }
 };
 
-class TTTSMNew : public TTCare{
+class TruthTableTSMNew : public TruthTableCare{
 public:
   bool fComplOSM, fComplTSM;
 
-  TTTSMNew(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM, bool fComplTSM): TTCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM), fComplTSM(fComplTSM) {}
+  TruthTableTSMNew(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM, bool fComplTSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM), fComplTSM(fComplTSM) {}
 
   int BDDCountNodes() override {
     Save(3);
@@ -1156,32 +1156,32 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  // TT tt(onsets, nInputs);
+  // TruthTable tt(onsets, nInputs);
   // // tt.SiftReo();
   // tt.RandomSiftReo(20);
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
-  //   TT tt(onsets, nInputs);
+  //   TruthTable tt(onsets, nInputs);
   //   tt.RandomSiftReo(20);
   //   vLevels = tt.vLevels;
   // }
-  // TTOSM tt(onsets, nInputs, pBPats, nBPats, rarity, false);
+  // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity, false);
   // tt.Reo(vLevels);
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TTTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity, true, true);
+  TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity, true, true);
   tt.RandomSiftReo(20);
   tt.Optimize();
   tt.BDDGenerateBlif(inputs, outputs, f);
 
-  // TTOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
+  // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
-  // TTOSM tt2(onsets, nInputs, pBPats, nBPats, rarity, true);
+  // TruthTableOSM tt2(onsets, nInputs, pBPats, nBPats, rarity, true);
   // int r2 = tt2.RandomSiftReo(20);
-  // TTCare &tt = (r1 < r2)? tt1: tt2;
+  // TruthTableCare &tt = (r1 < r2)? tt1: tt2;
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
