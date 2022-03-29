@@ -916,7 +916,7 @@ class TruthTableOSM : public TruthTableCare{
 public:
   bool fComplOSM;
 
-  TruthTableOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM) {}
+  TruthTableOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM = true): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM) {}
 
   int BDDBuild() override {
     BDDBuildStartup();
@@ -975,7 +975,7 @@ class TruthTableTSM : public TruthTableCare{
 public:
   bool fComplTSM;
 
-  TruthTableTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplTSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplTSM(fComplTSM) {}
+  TruthTableTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplTSM = true): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplTSM(fComplTSM) {}
 
   int BDDBuild() {
     Save(3);
@@ -1029,7 +1029,7 @@ class TruthTableTSMNew : public TruthTableCare{
 public:
   bool fComplOSM, fComplTSM;
 
-  TruthTableTSMNew(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM, bool fComplTSM): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM), fComplTSM(fComplTSM) {}
+  TruthTableTSMNew(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM = true, bool fComplTSM = true): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM), fComplTSM(fComplTSM) {}
 
   int BDDBuild() override {
     Save(3);
