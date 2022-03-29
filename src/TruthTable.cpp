@@ -9,8 +9,30 @@
 #include <cassert>
 #include <map>
 #include <bitset>
+#include <unordered_map>
 
 extern std::string BinaryToString(int bin, int size);
+
+template <class T>
+inline void hash_combine(std::size_t & seed, const T & v)
+{
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+namespace std
+{
+  template<typename S, typename T> struct hash<pair<S, T>>
+  {
+    inline size_t operator()(const pair<S, T> & v) const
+    {
+      size_t seed = 0;
+      ::hash_combine(seed, v.first);
+      ::hash_combine(seed, v.second);
+      return seed;
+    }
+  };
+}
 
 class TT {
 public:
@@ -680,7 +702,8 @@ public:
     std::map<int, std::pair<int, int> > skipped;
     for(int i = nInputs - 2; i >= 0; i--) {
       std::map<int, std::pair<int, int> > nextskipped;
-      std::map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
+      std::unordered_map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
+      unique.reserve(2 * vvIndices[i].size());
       for(uint j = 0; j < vvIndices[i].size(); j++) {
         std::pair<int, int> cof0, cof1;
         int cof0index = vvChildren[i][j+j] >> 1;
