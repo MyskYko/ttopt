@@ -48,9 +48,12 @@ public:
   std::vector<word> t;
 
   std::vector<std::vector<int> > vvIndices;
+  std::vector<std::vector<int> > vvRedundantIndices;
   std::vector<int> vLevels;
 
   std::vector<std::vector<word> > savedt;
+  std::vector<std::vector<std::vector<int> > > vvIndicesSaved;
+  std::vector<std::vector<std::vector<int> > > vvRedundantIndicesSaved;
   std::vector<std::vector<int> > vLevelsSaved;
 
   std::mt19937 rng;
@@ -89,14 +92,20 @@ public:
   virtual void Save(uint i) {
     if(savedt.size() < i + 1) {
       savedt.resize(i + 1);
+      vvIndicesSaved.resize(i + 1);
+      vvRedundantIndicesSaved.resize(i + 1);
       vLevelsSaved.resize(i + 1);
     }
     savedt[i] = t;
+    vvIndicesSaved[i] = vvIndices;
+    vvRedundantIndicesSaved[i] = vvRedundantIndices;
     vLevelsSaved[i] = vLevels;
   }
 
   virtual void Load(uint i) {
     t = savedt[i];
+    vvIndices = vvIndicesSaved[i];
+    vvRedundantIndices = vvRedundantIndicesSaved[i];
     vLevels = vLevelsSaved[i];
   }
 
@@ -191,6 +200,27 @@ public:
     CopyFunc(index, -1, lev, majority);
   }
 
+  int IsEq(int index1, int index2, int lev, bool fCompl = false) {
+    assert(index1 >= 0);
+    assert(index2 >= 0);
+    int logwidth = nInputs - lev;
+    bool fEq = true;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
+        fEq &= !value;
+        fCompl &= !(~value);
+      }
+    } else {
+      word one = ones[logwidth];
+      word value = GetValue(index1, lev) ^ GetValue(index2, lev);
+      fEq &= !value;
+      fCompl &= !(value ^ one);
+    }
+    return 2 * fCompl + fEq;
+  }
+
   int BDDFind(int index, int lev) {
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
@@ -249,25 +279,14 @@ public:
     return index << 1;
   }
 
-  void BDDRemoveRedundantIndices(std::vector<std::vector<int> > const &vvIndicesRedundant) {
-    for(int i = 0; i < nInputs; i++) {
-      auto it = vvIndicesRedundant[i].begin();
-      std::vector<int> vIndicesNew;
-      for(int j: vvIndices[i]) {
-        if(it == vvIndicesRedundant[i].end() || j != *it) {
-          vIndicesNew.push_back(j);
-        } else {
-          it++;
-        }
-      }
-      vvIndices[i] = vIndicesNew;
-    }
+  int BDDNodeCount(int lev) {
+    return vvIndices[lev].size() - vvRedundantIndices[lev].size();
   }
 
   int BDDNodeCount() {
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
-      count += vvIndices[i].size();
+      count += BDDNodeCount(i);
     }
     return count;
   }
@@ -275,6 +294,8 @@ public:
   virtual void BDDBuildStartup() {
     vvIndices.clear();
     vvIndices.resize(nInputs);
+    vvRedundantIndices.clear();
+    vvRedundantIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       BDDBuildOne(i, 0);
     }
@@ -282,17 +303,47 @@ public:
 
   virtual int BDDBuild() {
     BDDBuildStartup();
-    std::vector<std::vector<int> > vvIndicesRedundant(nInputs);
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0 = BDDBuildOne(index << 1, i);
         int cof1 = BDDBuildOne((index << 1) ^ 1, i);
         if(cof0 == cof1) {
-          vvIndicesRedundant[i-1].push_back(index);
+          vvRedundantIndices[i-1].push_back(index);
         }
       }
     }
-    BDDRemoveRedundantIndices(vvIndicesRedundant);
+    return BDDNodeCount();
+  }
+
+  virtual int BDDRebuild(int lev) {
+    vvIndices[lev].clear();
+    vvIndices[lev+1].clear();
+    vvRedundantIndices[lev].clear();
+    vvRedundantIndices[lev+1].clear();
+    if(lev == 0) {
+      for(int j = 0; j < nOutputs; j++) {
+        BDDBuildOne(j, 0);
+      }
+    } else {
+      for(auto &vIndices: {vvIndices[lev-1], vvRedundantIndices[lev-1]}) {
+        for(int index: vIndices) {
+          BDDBuildOne(index << 1, lev);
+          BDDBuildOne((index << 1) ^ 1, lev);
+        }
+      }
+    }
+    for(int index: vvIndices[lev]) {
+      int cof0 = BDDBuildOne(index << 1, lev+1);
+      int cof1 = BDDBuildOne((index << 1) ^ 1, lev+1);
+      if(cof0 == cof1) {
+        vvRedundantIndices[lev].push_back(index);
+      }
+    }
+    for(int index: vvIndices[lev+1]) {
+      if(IsEq(index << 1, (index << 1) ^ 1, lev+2)) {
+        vvRedundantIndices[lev+1].push_back(index);
+      }
+    }
     return BDDNodeCount();
   }
 
@@ -386,6 +437,18 @@ public:
         t[i] ^= (t[i] >> shamt) & swapmask[d];
       }
     }
+    if(!vvIndices.empty()) {
+      for(int i = lev + 2; i < nInputs; i++) {
+        for(uint j = 0; j < vvIndices[i].size(); j++) {
+          int k = 1 << (i - (lev + 2));
+          if(vvIndices[i][j] / k % 4 == 1) {
+            vvIndices[i][j] += k;
+          } else if(vvIndices[i][j] / k % 4 == 2) {
+            vvIndices[i][j] -= k;
+          }
+        }
+      }
+    }
   }
 
   int SiftReo() {
@@ -393,17 +456,23 @@ public:
     Save(0);
     std::list<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
+    auto old = vvIndices; // convention
+    auto old2 = vvRedundantIndices;
     while(!vars.empty()) {
+      std::swap(vvIndices, old);
+      std::swap(vvRedundantIndices, old2);
       int maxvar = -1;
-      uint maxnodes = 0;
+      int maxnodes = 0;
       std::list<int>::iterator maxit;
       for(auto it = vars.begin(); it != vars.end(); it++) {
-        if(vvIndices[vLevels[maxvar]].size() > maxnodes) {
-          maxnodes = vvIndices[vLevels[maxvar]].size();
+        if(BDDNodeCount(vLevels[maxvar]) > maxnodes) {
+          maxnodes = BDDNodeCount(vLevels[maxvar]);
           maxvar = *it;
           maxit = it;
         }
       }
+      std::swap(vvIndices, old);
+      std::swap(vvRedundantIndices, old2);
       if(maxvar == -1) {
         break;
       }
@@ -411,20 +480,28 @@ public:
       Save(1);
       for(int i = vLevels[maxvar]; i < nInputs - 1; i++) {
         SwapLevel(i);
-        int count = BDDBuild();
+        int count = BDDRebuild(i);
         if(best > count) {
           best = count;
           Save(0);
         }
       }
+      old = vvIndices;
+      old2 = vvRedundantIndices;
       Load(1);
+      bool fbuilt = false; // convention
       for(int i = vLevels[maxvar]-1; i >= 0; i--) {
         SwapLevel(i);
-        int count = BDDBuild();
+        int count = BDDRebuild(i);
+        fbuilt = true;
         if(best > count) {
           best = count;
           Save(0);
         }
+      }
+      if(fbuilt) {
+        old = vvIndices;
+        old2 = vvRedundantIndices;
       }
       Load(0);
     }
@@ -432,6 +509,8 @@ public:
   }
 
   void Reo(std::vector<int> vLevelsNew) {
+    vvIndices.clear();
+    vvRedundantIndices.clear();
     for(int i = 0; i < nInputs; i++) {
       int var = std::find(vLevelsNew.begin(), vLevelsNew.end(), i) - vLevelsNew.begin();
       int lev = vLevels[var];
@@ -698,6 +777,21 @@ public:
     }
     vvIndices[lev].push_back(index);
     return index << 1;
+  }
+
+  void BDDRemoveRedundantIndices(std::vector<std::vector<int> > const &vvIndicesRedundant) {
+    for(int i = 0; i < nInputs; i++) {
+      auto it = vvIndicesRedundant[i].begin();
+      std::vector<int> vIndicesNew;
+      for(int j: vvIndices[i]) {
+        if(it == vvIndicesRedundant[i].end() || j != *it) {
+          vIndicesNew.push_back(j);
+        } else {
+          it++;
+        }
+      }
+      vvIndices[i] = vIndicesNew;
+    }
   }
 
   void BDDRemoveRedundantIndicesFromChildren(std::vector<std::vector<int> > const &vvChildren) {
@@ -1250,10 +1344,9 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  // TruthTable tt(onsets, nInputs);
-  // // tt.SiftReo();
-  // tt.RandomSiftReo(20);
-  // tt.BDDGenerateBlif(inputs, outputs, f);
+  TruthTable tt(onsets, nInputs);
+  tt.RandomSiftReo(20);
+  tt.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
@@ -1266,10 +1359,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
