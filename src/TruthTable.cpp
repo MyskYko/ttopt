@@ -92,21 +92,30 @@ public:
   virtual void Save(uint i) {
     if(savedt.size() < i + 1) {
       savedt.resize(i + 1);
-      vvIndicesSaved.resize(i + 1);
-      vvRedundantIndicesSaved.resize(i + 1);
       vLevelsSaved.resize(i + 1);
     }
     savedt[i] = t;
-    vvIndicesSaved[i] = vvIndices;
-    vvRedundantIndicesSaved[i] = vvRedundantIndices;
     vLevelsSaved[i] = vLevels;
   }
 
   virtual void Load(uint i) {
+    assert(i < savedt.size());
     t = savedt[i];
+    vLevels = vLevelsSaved[i];
+  }
+
+  void SaveIndices(uint i) {
+    if(vvIndicesSaved.size() < i + 1) {
+      vvIndicesSaved.resize(i + 1);
+      vvRedundantIndicesSaved.resize(i + 1);
+    }
+    vvIndicesSaved[i] = vvIndices;
+    vvRedundantIndicesSaved[i] = vvRedundantIndices;
+  }
+
+  void LoadIndices(uint i) {
     vvIndices = vvIndicesSaved[i];
     vvRedundantIndices = vvRedundantIndicesSaved[i];
-    vLevels = vLevelsSaved[i];
   }
 
   void GeneratePla(std::string filename) {
@@ -280,6 +289,9 @@ public:
   }
 
   int BDDNodeCount(int lev) {
+    if(vvRedundantIndices.empty()) {
+      return vvIndices[lev].size();
+    }
     return vvIndices[lev].size() - vvRedundantIndices[lev].size();
   }
 
@@ -325,11 +337,9 @@ public:
         BDDBuildOne(j, 0);
       }
     } else {
-      for(auto &vIndices: {vvIndices[lev-1], vvRedundantIndices[lev-1]}) {
-        for(int index: vIndices) {
-          BDDBuildOne(index << 1, lev);
-          BDDBuildOne((index << 1) ^ 1, lev);
-        }
+      for(int index: vvIndices[lev-1]) {
+        BDDBuildOne(index << 1, lev);
+        BDDBuildOne((index << 1) ^ 1, lev);
       }
     }
     for(int index: vvIndices[lev]) {
@@ -454,13 +464,12 @@ public:
   int SiftReo() {
     int best = BDDBuild();
     Save(0);
+    SaveIndices(0);
     std::list<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
-    auto old = vvIndices; // convention
-    auto old2 = vvRedundantIndices;
+    bool turn = true;
     while(!vars.empty()) {
-      std::swap(vvIndices, old);
-      std::swap(vvRedundantIndices, old2);
+      bool updated = false;
       int maxvar = -1;
       int maxnodes = 0;
       std::list<int>::iterator maxit;
@@ -471,39 +480,39 @@ public:
           maxit = it;
         }
       }
-      std::swap(vvIndices, old);
-      std::swap(vvRedundantIndices, old2);
+      LoadIndices(!turn); // conv
       if(maxvar == -1) {
         break;
       }
       vars.erase(maxit);
-      Save(1);
-      for(int i = vLevels[maxvar]; i < nInputs - 1; i++) {
+      int lev = vLevels[maxvar];
+      for(int i = lev; i < nInputs - 1; i++) {
         SwapLevel(i);
         int count = BDDRebuild(i);
         if(best > count) {
           best = count;
-          Save(0);
+          updated = true;
+          Save(turn);
+          SaveIndices(turn);
         }
       }
-      old = vvIndices;
-      old2 = vvRedundantIndices;
-      Load(1);
-      bool fbuilt = false; // convention
-      for(int i = vLevels[maxvar]-1; i >= 0; i--) {
-        SwapLevel(i);
-        int count = BDDRebuild(i);
-        fbuilt = true;
-        if(best > count) {
-          best = count;
-          Save(0);
+      if(lev) {
+        Load(!turn);
+        LoadIndices(!turn);
+        for(int i = lev-1; i >= 0; i--) {
+          SwapLevel(i);
+          int count = BDDRebuild(i);
+          if(best > count) {
+            best = count;
+            updated = true;
+            Save(turn);
+            SaveIndices(turn);
+          }
         }
       }
-      if(fbuilt) {
-        old = vvIndices;
-        old2 = vvRedundantIndices;
-      }
-      Load(0);
+      turn ^= updated;
+      Load(!turn);
+      // LoadIndices(!turn); // conv
     }
     return best;
   }
@@ -857,6 +866,8 @@ public:
   void BDDBuildStartup() override {
     vvIndices.clear();
     vvIndices.resize(nInputs);
+    vvRedundantIndices.clear();
+    vvRedundantIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
         BDDBuildOne(i, 0);
@@ -951,6 +962,10 @@ public:
   }
 
   virtual void Optimize() = 0;
+
+  int BDDRebuild(int i) override {
+    return BDDBuild();
+  }
 };
 
 class TruthTableOSDM : public TruthTableCare{
@@ -1344,9 +1359,9 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  TruthTable tt(onsets, nInputs);
-  tt.RandomSiftReo(20);
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTable tt(onsets, nInputs);
+  // tt.RandomSiftReo(20);
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
@@ -1359,10 +1374,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // tt.RandomSiftReo(20);
-  // tt.Optimize();
-  // tt.BDDGenerateBlif(inputs, outputs, f);
+  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  tt.RandomSiftReo(20);
+  tt.Optimize();
+  tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
