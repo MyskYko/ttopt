@@ -104,7 +104,7 @@ public:
     vLevels = vLevelsSaved[i];
   }
 
-  void SaveIndices(uint i) {
+  virtual void SaveIndices(uint i) {
     if(vvIndicesSaved.size() < i + 1) {
       vvIndicesSaved.resize(i + 1);
       vvRedundantIndicesSaved.resize(i + 1);
@@ -113,7 +113,7 @@ public:
     vvRedundantIndicesSaved[i] = vvRedundantIndices;
   }
 
-  void LoadIndices(uint i) {
+  virtual void LoadIndices(uint i) {
     vvIndices = vvIndicesSaved[i];
     vvRedundantIndices = vvRedundantIndicesSaved[i];
   }
@@ -288,7 +288,7 @@ public:
     return index << 1;
   }
 
-  int BDDNodeCount(int lev) {
+  virtual int BDDNodeCountLevel(int lev) {
     if(vvRedundantIndices.empty()) {
       return vvIndices[lev].size();
     }
@@ -298,7 +298,7 @@ public:
   int BDDNodeCount() {
     int count = 1; // const node
     for(int i = 0; i < nInputs; i++) {
-      count += BDDNodeCount(i);
+      count += BDDNodeCountLevel(i);
     }
     return count;
   }
@@ -474,8 +474,8 @@ public:
       int maxnodes = 0;
       std::list<int>::iterator maxit;
       for(auto it = vars.begin(); it != vars.end(); it++) {
-        if(BDDNodeCount(vLevels[maxvar]) > maxnodes) {
-          maxnodes = BDDNodeCount(vLevels[maxvar]);
+        if(BDDNodeCountLevel(vLevels[maxvar]) > maxnodes) {
+          maxnodes = BDDNodeCountLevel(vLevels[maxvar]);
           maxvar = *it;
           maxit = it;
         }
@@ -860,14 +860,11 @@ public:
         CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
       }
     }
-    vvIndicesMerged.clear();
   }
 
   void BDDBuildStartup() override {
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    vvRedundantIndices.clear();
-    vvRedundantIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
         BDDBuildOne(i, 0);
@@ -879,6 +876,7 @@ public:
     originalt = t;
     vvIndices.clear();
     vvIndices.resize(nInputs);
+    vvIndicesMerged.clear();
     vvIndicesMerged.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
@@ -972,9 +970,40 @@ class TruthTableOSDM : public TruthTableCare{
 public:
   TruthTableOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
+  std::vector<std::vector<int> > vvChildren;
+  std::vector<std::map<int, std::pair<int, int> > > vmRedundantIndices;
+
+  std::vector<std::vector<std::vector<int> > > vvChildrenSaved;
+  std::vector<std::vector<std::map<int, std::pair<int, int> > > > vmRedundantIndicesSaved;
+  std::vector<std::vector<std::vector<std::pair<int, int> > > > vvIndicesMergedSaved;
+
+  void SaveIndices(uint i) override {
+    TruthTable::SaveIndices(i);
+    if(vvChildrenSaved.size() < i + 1) {
+      vvChildrenSaved.resize(i + 1);
+      vmRedundantIndicesSaved.resize(i + 1);
+      vvIndicesMergedSaved.resize(i + 1);
+    }
+    vvChildrenSaved[i] = vvChildren;
+    vmRedundantIndicesSaved[i] = vmRedundantIndices;
+    vvIndicesMergedSaved[i] = vvIndicesMerged;
+  }
+
+  void LoadIndices(uint i) override {
+    TruthTable::LoadIndices(i);
+    vvChildren = vvChildrenSaved[i];
+    vmRedundantIndices = vmRedundantIndicesSaved[i];
+    vvIndicesMerged = vvIndicesMergedSaved[i];
+  }
+
   int BDDBuild() override {
     BDDBuildStartup();
-    std::vector<std::vector<int> > vvChildren(nInputs);
+    vvChildren.clear();
+    vvChildren.resize(nInputs);
+    vvIndicesMerged.clear();
+    vvIndicesMerged.resize(nInputs);
+    vmRedundantIndices.clear();
+    vmRedundantIndices.resize(nInputs);
     for(int i = 1; i < nInputs; i++) {
       for(int index: vvIndices[i-1]) {
         int cof0index = index << 1;
@@ -994,9 +1023,203 @@ public:
         vvChildren[i-1].push_back(cof1);
       }
     }
-    BDDRemoveRedundantIndicesFromChildren(vvChildren);
+    BDDReduce(nInputs - 2);
     RestoreCare();
     return BDDNodeCount();
+  }
+
+  int BDDNodeCountLevel(int lev) override {
+    return vvIndices[lev].size() - vmRedundantIndices[lev].size();
+  }
+
+  void BDDReduce(int lev) {
+    if(lev > nInputs - 2) {
+      lev = nInputs - 2;
+    }
+    for(int i = lev; i >= 0; i--) {
+      std::unordered_map<std::pair<std::pair<int, int>, std::pair<int, int> >, int> unique;
+      unique.reserve(2 * vvIndices[i].size());
+      for(uint j = 0; j < vvIndices[i].size(); j++) {
+        std::pair<int, int> cof0, cof1;
+        int cof0index = vvChildren[i][j+j] >> 1;
+        int cof1index = vvChildren[i][j+j+1] >> 1;
+        bool cof0c = vvChildren[i][j+j] & 1;
+        bool cof1c = vvChildren[i][j+j+1] & 1;
+        if(cof0index < 0) {
+          cof0 = {nInputs, cof0c};
+        } else if(vmRedundantIndices[i+1].count(cof0index)) {
+          cof0 = vmRedundantIndices[i+1][cof0index];
+          cof0.second ^= cof0c;
+        } else {
+          cof0 = {i+1, vvChildren[i][j+j]};
+        }
+        if(cof1index < 0) {
+          cof1 = {nInputs, cof1c};
+        } else if(vmRedundantIndices[i+1].count(cof1index)) {
+          cof1 = vmRedundantIndices[i+1][cof1index];
+          cof1.second ^= cof1c;
+        } else {
+          cof1 = {i+1, vvChildren[i][j+j+1]};
+        }
+        if(cof0 == cof1) {
+          vmRedundantIndices[i][vvIndices[i][j]] = cof0;
+          continue;
+        }
+        bool fCompl = cof0.second & 1;
+        if(fCompl) {
+          cof0.second ^= 1;
+          cof1.second ^= 1;
+        }
+        if(unique.count({cof0, cof1})) {
+          vmRedundantIndices[i][vvIndices[i][j]] = {i, unique[{cof0, cof1}] ^ fCompl};
+          continue;
+        }
+        unique[{cof0, cof1}] = (vvIndices[i][j] << 1) ^ fCompl;
+      }
+    }
+  }
+
+  int BDDBuildOneNoCare(int index, int lev) {
+    int r = BDDFind(index, lev);
+    assert(r >= -2);
+    if(r >= 0) {
+      vvIndicesMerged[lev].push_back({r, index});
+    }
+    return r;
+  }
+
+  int BDDRebuild(int lev) override {
+    for(int i = 0; i < lev; i++) {
+      for(auto &p: vvIndicesMerged[i]) {
+        if(p.first >= 0) {
+          MergeCare(p.first >> 1, p.second, i);
+        }
+      }
+    }
+    vvIndices[lev].clear();
+    vvIndicesMerged[lev].clear();
+    if(lev == 0) {
+      for(int j = 0; j < nOutputs; j++) {
+        BDDBuildOne(j, 0);
+      }
+    } else {
+      vvChildren[lev-1].clear();
+      for(int index: vvIndices[lev-1]) {
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
+        int cof0, cof1;
+        if(IsDC(cof0index, lev)) {
+          cof1 = BDDBuildOne(cof1index, lev);
+          cof0 = cof1;
+        } else if(IsDC(cof1index, lev)) {
+          cof0 = BDDBuildOne(cof0index, lev);
+          cof1 = cof0;
+        } else {
+          cof0 = BDDBuildOne(cof0index, lev);
+          cof1 = BDDBuildOne(cof1index, lev);
+        }
+        vvChildren[lev-1].push_back(cof0);
+        vvChildren[lev-1].push_back(cof1);
+      }
+    }
+    vvIndices[lev+1].clear();
+    vvIndicesMerged[lev+1].clear();
+    vvChildren[lev].clear();
+    for(int index: vvIndices[lev]) {
+      int cof0index = index << 1;
+      int cof1index = cof0index ^ 1;
+      int cof0, cof1;
+      if(IsDC(cof0index, lev+1)) {
+        cof1 = BDDBuildOne(cof1index, lev+1);
+        cof0 = cof1;
+      } else if(IsDC(cof1index, lev+1)) {
+        cof0 = BDDBuildOne(cof0index, lev+1);
+        cof1 = cof0;
+      } else {
+        cof0 = BDDBuildOne(cof0index, lev+1);
+        cof1 = BDDBuildOne(cof1index, lev+1);
+      }
+      vvChildren[lev].push_back(cof0);
+      vvChildren[lev].push_back(cof1);
+    }
+    if(lev < nInputs - 2) {
+      vvIndicesMerged[lev+2].clear();
+      for(int index: vvIndices[lev+1]) {
+        int cof0index = index << 1;
+        int cof1index = cof0index ^ 1;
+        int cof0, cof1;
+        if(IsDC(cof0index, lev+2)) {
+          cof1 = BDDBuildOneNoCare(cof1index, lev+2);
+          cof0 = cof1;
+        } else if(IsDC(cof1index, lev+2)) {
+          cof0 = BDDBuildOneNoCare(cof0index, lev+2);
+          cof1 = cof0;
+        } else {
+          cof0 = BDDBuildOneNoCare(cof0index, lev+2);
+          cof1 = BDDBuildOneNoCare(cof1index, lev+2);
+        }
+        vvChildren[lev+1].push_back(cof0);
+        vvChildren[lev+1].push_back(cof1);
+      }
+    }
+    for(int i = 0; i < lev+2; i++) {
+      vmRedundantIndices[i].clear();
+    }
+    BDDReduce(lev+1);
+    RestoreCare();
+    return BDDNodeCount();
+  }
+
+  void SwapLevel(int lev) override {
+    TruthTableCare::SwapLevel(lev);
+    if(!vvIndices.empty()) {
+      vvChildren[lev+1].clear();
+      for(int i = lev + 2; i < nInputs; i++) {
+        int k = 1 << (i - (lev + 2));
+        for(int &index: vvChildren[i-1]) {
+          if((index >> 1) / k % 4 == 1) {
+            index += k << 1;
+          } else if((index >> 1) / k % 4 == 2) {
+            index -= k << 1;
+          }
+        }
+        for(auto &p: vvIndicesMerged[i]) {
+          if(p.first >= 0) {
+            if((p.first >> 1) / k % 4 == 1) {
+              p.first += k << 1;
+            } else if((p.first >> 1) / k % 4 == 2) {
+              p.first -= k << 1;
+            }
+          }
+          if(p.second / k % 4 == 1) {
+            p.second += k;
+          } else if(p.second / k % 4 == 2) {
+            p.second -= k;
+          }
+        }
+        std::map<int, std::pair<int, int> > mRedundantIndicesNew;
+        for(auto p: vmRedundantIndices[i]) {
+          int index = p.first;
+          if(index / k % 4 == 1) {
+            index += k;
+          } else if(index / k % 4 == 2) {
+            index -= k;
+          }
+          int i2 = p.second.first;
+          int index2 = p.second.second;
+          if(i2 < nInputs) {
+            int k2 = 1 << (i2 - (lev + 2));
+            if((index2 >> 1) / k2 % 4 == 1) {
+              index2 += k2 << 1;
+            } else if((index2 >> 1) / k2 % 4 == 2) {
+              index2 -= k2 << 1;
+            }
+          }
+          mRedundantIndicesNew[index] = {i2, index2};
+        }
+        vmRedundantIndices[i] = mRedundantIndicesNew;
+      }
+    }
   }
 
   void Optimize() override {
@@ -1340,6 +1563,8 @@ public:
 
   int BDDBuild() override {
     Save(3);
+    vvRedundantIndices.clear();
+    vvRedundantIndices.resize(nInputs);
     TruthTable::BDDBuild();
     Load(3);
     return BDDNodeCount();
