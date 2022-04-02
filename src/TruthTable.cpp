@@ -89,6 +89,33 @@ public:
     std::iota(vLevels.begin(), vLevels.end(), 0);
   }
 
+  void GeneratePla(std::string filename) {
+    std::ofstream f(filename);
+    f << ".i " << nInputs << std::endl;
+    f << ".o " << nOutputs << std::endl;
+    if(nSize) {
+      for(int index = 0; index < nSize; index++) {
+        for(int pos = 0; pos < ww; pos++) {
+          int pat = (index << lww) + pos;
+          f << BinaryToString(pat, nInputs) << " ";
+          for(int i = 0; i < nOutputs; i++) {
+            f << ((t[nSize * i + index] >> pos) & 1);
+          }
+          f << std::endl;
+        }
+      }
+    } else {
+      for(int pos = 0; pos < (1 << nInputs); pos++) {
+        f << BinaryToString(pos, nInputs) << " ";
+        for(int i = 0; i < nOutputs; i++) {
+          int padding = i * (1 << nInputs);
+          f << ((t[padding / ww] >> (pos + padding % ww)) & 1);
+        }
+        f << std::endl;
+      }
+    }
+  }
+
   virtual void Save(uint i) {
     if(savedt.size() < i + 1) {
       savedt.resize(i + 1);
@@ -118,33 +145,6 @@ public:
     vvRedundantIndices = vvRedundantIndicesSaved[i];
   }
 
-  void GeneratePla(std::string filename) {
-    std::ofstream f(filename);
-    f << ".i " << nInputs << std::endl;
-    f << ".o " << nOutputs << std::endl;
-    if(nSize) {
-      for(int index = 0; index < nSize; index++) {
-        for(int pos = 0; pos < ww; pos++) {
-          int pat = (index << lww) + pos;
-          f << BinaryToString(pat, nInputs) << " ";
-          for(int i = 0; i < nOutputs; i++) {
-            f << ((t[nSize * i + index] >> pos) & 1);
-          }
-          f << std::endl;
-        }
-      }
-    } else {
-      for(int pos = 0; pos < (1 << nInputs); pos++) {
-        f << BinaryToString(pos, nInputs) << " ";
-        for(int i = 0; i < nOutputs; i++) {
-          int padding = i * (1 << nInputs);
-          f << ((t[padding / ww] >> (pos + padding % ww)) & 1);
-        }
-        f << std::endl;
-      }
-    }
-  }
-
   word GetValue(int index_lev, int lev) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= lww);
@@ -152,70 +152,6 @@ public:
     int index = index_lev >> (lww - logwidth);
     int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
     return (t[index] >> pos) & ones[logwidth];
-  }
-
-  void SetValue(int index_lev, int lev, word value) {
-    assert(index_lev >= 0);
-    assert(nInputs - lev <= lww);
-    int logwidth = nInputs - lev;
-    int index = index_lev >> (lww - logwidth);
-    int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
-    t[index] &= ~(ones[logwidth] << pos);
-    t[index] ^= value << pos;
-  }
-
-  void CopyFunc(int index1, int index2, int lev, bool fCompl) {
-    assert(index1 >= 0);
-    int logwidth = nInputs - lev;
-    if(logwidth > lww) {
-      int nScopeSize = 1 << (logwidth - lww);
-      if(!fCompl) {
-        if(index2 < 0) {
-          for(int i = 0; i < nScopeSize; i++) {
-            t[nScopeSize * index1 + i] = 0;
-          }
-        } else {
-          for(int i = 0; i < nScopeSize; i++) {
-            t[nScopeSize * index1 + i] = t[nScopeSize * index2 + i];
-          }
-        }
-      } else {
-        if(index2 < 0) {
-          for(int i = 0; i < nScopeSize; i++) {
-            t[nScopeSize * index1 + i] = ones[lww];
-          }
-        } else {
-          for(int i = 0; i < nScopeSize; i++) {
-            t[nScopeSize * index1 + i] = ~t[nScopeSize * index2 + i];
-          }
-        }
-      }
-    } else {
-      word value = 0;
-      if(index2 >= 0) {
-        value = GetValue(index2, lev);
-      }
-      if(fCompl) {
-        value ^= ones[logwidth];
-      }
-      SetValue(index1, lev, value);
-    }
-  }
-
-  void ShiftToMajority(int index, int lev) {
-    assert(index >= 0);
-    int logwidth = nInputs - lev;
-    int count = 0;
-    if(logwidth > lww) {
-      int nScopeSize = 1 << (logwidth - lww);
-      for(int i = 0; i < nScopeSize; i++) {
-        count += bsw(t[nScopeSize * index + i]).count();
-      }
-    } else {
-      count = bsw(GetValue(index, lev)).count();
-    }
-    bool majority = count > (1 << (logwidth - 1));
-    CopyFunc(index, -1, lev, majority);
   }
 
   int IsEq(int index1, int index2, int lev, bool fCompl = false) {
@@ -235,6 +171,21 @@ public:
       fCompl &= !(value ^ ones[logwidth]);
     }
     return 2 * fCompl + fEq;
+  }
+
+  virtual int BDDNodeCountLevel(int lev) {
+    if(vvRedundantIndices.empty()) {
+      return vvIndices[lev].size();
+    }
+    return vvIndices[lev].size() - vvRedundantIndices[lev].size();
+  }
+
+  int BDDNodeCount() {
+    int count = 1; // const node
+    for(int i = 0; i < nInputs; i++) {
+      count += BDDNodeCountLevel(i);
+    }
+    return count;
   }
 
   int BDDFind(int index, int lev) {
@@ -290,21 +241,6 @@ public:
     }
     vvIndices[lev].push_back(index);
     return index << 1;
-  }
-
-  virtual int BDDNodeCountLevel(int lev) {
-    if(vvRedundantIndices.empty()) {
-      return vvIndices[lev].size();
-    }
-    return vvIndices[lev].size() - vvRedundantIndices[lev].size();
-  }
-
-  int BDDNodeCount() {
-    int count = 1; // const node
-    for(int i = 0; i < nInputs; i++) {
-      count += BDDNodeCountLevel(i);
-    }
-    return count;
   }
 
   virtual void BDDBuildStartup() {
@@ -629,6 +565,70 @@ public:
     TruthTable::Load(i);
     care = savedcare[i];
     RestoreCare();
+  }
+
+  void SetValue(int index_lev, int lev, word value) {
+    assert(index_lev >= 0);
+    assert(nInputs - lev <= lww);
+    int logwidth = nInputs - lev;
+    int index = index_lev >> (lww - logwidth);
+    int pos = (index_lev % (1 << (lww - logwidth))) << logwidth;
+    t[index] &= ~(ones[logwidth] << pos);
+    t[index] ^= value << pos;
+  }
+
+  void CopyFunc(int index1, int index2, int lev, bool fCompl) {
+    assert(index1 >= 0);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      if(!fCompl) {
+        if(index2 < 0) {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = 0;
+          }
+        } else {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = t[nScopeSize * index2 + i];
+          }
+        }
+      } else {
+        if(index2 < 0) {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = ones[lww];
+          }
+        } else {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = ~t[nScopeSize * index2 + i];
+          }
+        }
+      }
+    } else {
+      word value = 0;
+      if(index2 >= 0) {
+        value = GetValue(index2, lev);
+      }
+      if(fCompl) {
+        value ^= ones[logwidth];
+      }
+      SetValue(index1, lev, value);
+    }
+  }
+
+  void ShiftToMajority(int index, int lev) {
+    assert(index >= 0);
+    int logwidth = nInputs - lev;
+    int count = 0;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        count += bsw(t[nScopeSize * index + i]).count();
+      }
+    } else {
+      count = bsw(GetValue(index, lev)).count();
+    }
+    bool majority = count > (1 << (logwidth - 1));
+    CopyFunc(index, -1, lev, majority);
   }
 
   void SwapLevel(int lev) override {
