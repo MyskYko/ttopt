@@ -169,21 +169,30 @@ public:
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
-      for(int i = 0; i < nScopeSize; i++) {
+      if(!fCompl) {
         if(index2 < 0) {
-          t[nScopeSize * index1 + i] = 0;
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = 0;
+          }
         } else {
-          t[nScopeSize * index1 + i] = t[nScopeSize * index2 + i];
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = t[nScopeSize * index2 + i];
+          }
         }
-        if(fCompl) {
-          t[nScopeSize * index1 + i] = ~t[nScopeSize * index1 + i];
+      } else {
+        if(index2 < 0) {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = ones[lww];
+          }
+        } else {
+          for(int i = 0; i < nScopeSize; i++) {
+            t[nScopeSize * index1 + i] = ~t[nScopeSize * index2 + i];
+          }
         }
       }
     } else {
-      word value;
-      if(index2 < 0) {
-        value = 0;
-      } else {
+      word value = 0;
+      if(index2 >= 0) {
         value = GetValue(index2, lev);
       }
       if(fCompl) {
@@ -217,15 +226,13 @@ public:
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
-        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
-        fEq &= !value;
-        fCompl &= !(~value);
+        fEq &= t[nScopeSize * index1 + i] == t[nScopeSize * index2 + i];
+        fCompl &= t[nScopeSize * index1 + i] == ~t[nScopeSize * index2 + i];
       }
     } else {
-      word one = ones[logwidth];
       word value = GetValue(index1, lev) ^ GetValue(index2, lev);
       fEq &= !value;
-      fCompl &= !(value ^ one);
+      fCompl &= !(value ^ ones[logwidth]);
     }
     return 2 * fCompl + fEq;
   }
@@ -248,22 +255,19 @@ public:
         bool fEq = true;
         bool fCompl = true;
         for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
-          word value = t[nScopeSize * index + i];
-          word value2 = t[nScopeSize * index2 + i];
-          fEq &= value == value2;
-          fCompl &= value == ~value2;
+          fEq &= t[nScopeSize * index + i] == t[nScopeSize * index2 + i];
+          fCompl &= t[nScopeSize * index + i] == ~t[nScopeSize * index2 + i];
         }
         if(fEq || fCompl) {
           return (index2 << 1) ^ fCompl;
         }
       }
     } else {
-      word one = ones[logwidth];
       word value = GetValue(index, lev);
       if(!value) {
         return -2;
       }
-      if(!(value ^ one)) {
+      if(!(value ^ ones[logwidth])) {
         return -1;
       }
       for(int index2: vvIndices[lev]) {
@@ -271,7 +275,7 @@ public:
         if(!(value2)) {
           return index2 << 1;
         }
-        if(!(value2 ^ one)) {
+        if(!(value2 ^ ones[logwidth])) {
           return (index2 << 1) ^ 1;
         }
       }
@@ -358,6 +362,8 @@ public:
   }
 
   bool Imply(int index1, int index2, int lev) {
+    assert(index1 >= 0);
+    assert(index2 >= 0);
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
@@ -386,15 +392,9 @@ public:
     if(cof0 == cof1) {
       return cof0;
     }
-    int cof0id = cof0 >> 1;
-    int cof1id = cof1 >> 1;
-    bool cof0c = cof0 & 1;
-    bool cof1c = cof1 & 1;
-    bool imp01 = Imply(index << 1, (index << 1) ^ 1, lev + 1);
-    bool imp10 = Imply((index << 1) ^ 1, index << 1, lev + 1);
-    f << ".names " << prefix << "v" << lev << " " << prefix << "n" << cof0id << " " << prefix << "n" << cof1id << " " << prefix << "n" << nNodes << std::endl;
-    f << (imp01? "-" : "0") << !cof0c << "- 1" << std::endl;
-    f << (imp10? "--" : "1-") << !cof1c << " 1" << std::endl;
+    f << ".names " << prefix << "v" << lev << " " << prefix << "n" << (cof0 >> 1) << " " << prefix << "n" << (cof1 >> 1) << " " << prefix << "n" << nNodes << std::endl;
+    f << (Imply(index << 1, (index << 1) ^ 1, lev + 1)? "-" : "0") << !(cof0 & 1) << "- 1" << std::endl;
+    f << (Imply((index << 1) ^ 1, index << 1, lev + 1)? "--" : "1-") << !(cof1 & 1) << " 1" << std::endl;
     vvIndices[lev].push_back(index);
     vvNodes[lev].push_back(nNodes);
     return (nNodes++) << 1;
@@ -414,10 +414,8 @@ public:
     }
     for(int i = 0; i < nOutputs; i++) {
       int node = BDDGenerateBlifRec(vvNodes, nNodes, i, 0, f, prefix);
-      int id = node >> 1;
-      bool c = node & 1;
-      f << ".names " << prefix << "n" << id << " " << outputs[i] << std::endl;
-      f << !c << " 1" << std::endl;
+      f << ".names " << prefix << "n" << (node >> 1) << " " << outputs[i] << std::endl;
+      f << !(node & 1) << " 1" << std::endl;
     }
   }
 
@@ -552,16 +550,6 @@ public:
     }
     Load(2);
     return best;
-  }
-
-  void ShowIndices() {
-    for(uint i = 0; i < vvIndices.size(); i++) {
-      std::cout << "var " << i << ":" << std::endl;
-      for(int index: vvIndices[i]) {
-        std::cout << index << ", ";
-      }
-      std::cout << std::endl;
-    }
   }
 };
 
