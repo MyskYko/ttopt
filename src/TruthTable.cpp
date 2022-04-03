@@ -539,7 +539,6 @@ public:
         }
       }
     }
-    RestoreCare();
   }
 
   void RestoreCare() {
@@ -568,7 +567,6 @@ public:
   void Load(uint i) override {
     TruthTable::Load(i);
     care = savedcare[i];
-    RestoreCare();
   }
 
   void SetValue(int index_lev, int lev, word value) {
@@ -659,7 +657,6 @@ public:
         care[i] ^= (care[i] >> shamt) & swapmask[d];
       }
     }
-    RestoreCare();
   }
 
   void GeneratePlaCare(std::string filename) {
@@ -789,6 +786,7 @@ public:
   }
 
   void BDDBuildStartup() override {
+    RestoreCare();
     vvIndices.clear();
     vvIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
@@ -799,6 +797,7 @@ public:
   }
 
   void OptimizationStartup() {
+    RestoreCare();
     originalt = t;
     vvIndices.clear();
     vvIndices.resize(nInputs);
@@ -904,17 +903,11 @@ public:
   }
 
   void BDDBuildStartup() override {
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
     vvChildren.clear();
     vvChildren.resize(nInputs);
     vmRedundantIndices.clear();
     vmRedundantIndices.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDBuildOne(i, 0);
-      }
-    }
+    TruthTableCare::BDDBuildStartup();
   }
 
   void BDDReduce(int lev) {
@@ -1016,7 +1009,6 @@ public:
       }
     }
     BDDReduce(nInputs - 2);
-    RestoreCare();
     return BDDNodeCount();
   }
 
@@ -1030,6 +1022,7 @@ public:
   }
 
   int BDDRebuild(int lev) override {
+    RestoreCare();
     for(int i = 0; i < lev; i++) {
       for(auto &p: vvIndicesMerged[i]) {
         if(p.first >= 0) {
@@ -1108,7 +1101,6 @@ public:
       vmRedundantIndices[i].clear();
     }
     BDDReduce(lev+1);
-    RestoreCare();
     return BDDNodeCount();
   }
 
@@ -1191,7 +1183,6 @@ public:
       }
     }
     BDDReduce(nInputs - 2);
-    RestoreCare();
     return BDDNodeCount();
   }
 
@@ -1513,8 +1504,9 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
+  TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
   tt.Optimize();
   tt.BDDGenerateBlif(inputs, outputs, f);
