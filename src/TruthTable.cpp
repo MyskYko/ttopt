@@ -835,20 +835,24 @@ public:
     }
   }
 
+  void Merge(int index1, int index2, int lev, bool fCompl) {
+    MergeCare(index1, index2, lev);
+    if(!vvIndicesMerged.empty()) {
+      vvIndicesMerged[lev].push_back({(index1 << 1) ^ fCompl, index2});
+    }
+  }
+
   int BDDBuildOne(int index, int lev) override {
     int r = BDDFind(index, lev);
     if(r >= -2) {
-      MergeCare(r >> 1, index, lev);
-      if(!vvIndicesMerged.empty()) {
-        vvIndicesMerged[lev].push_back({r, index});
-      }
+      Merge(r >> 1, index, lev, r & 1);
       return r;
     }
     vvIndices[lev].push_back(index);
     return index << 1;
   }
 
-  void Merge() {
+  void CompleteMerge() {
     for(int i = nInputs - 1; i >= 0; i--) {
       for(auto it = vvIndicesMerged[i].rbegin(); it != vvIndicesMerged[i].rend(); it++) {
         CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
@@ -1173,7 +1177,7 @@ public:
         }
       }
     }
-    Merge();
+    CompleteMerge();
   }
 };
 
@@ -1189,17 +1193,11 @@ public:
       int cof1index = cof0index ^ 1;
       int cof0, cof1;
       if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
-        MergeCare(cof0index, cof1index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-        }
+        Merge(cof0index, cof1index, lev, !(r & 1));
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
-        MergeCare(cof1index, cof0index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
-        }
+        Merge(cof1index, cof0index, lev, !(r & 1));
         cof1 = BDDBuildOne(cof1index, lev);
         cof0 = cof1 ^ !(r & 1);
       } else {
@@ -1227,12 +1225,10 @@ public:
         int cof0index = index << 1;
         int cof1index = cof0index ^ 1;
         if(int r = Include(cof0index, cof1index, i, fComplOSM)) {
-          MergeCare(cof0index, cof1index, i);
-          vvIndicesMerged[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+          Merge(cof0index, cof1index, i, !(r & 1));
           BDDBuildOne(cof0index, i);
         } else if(int r = Include(cof1index, cof0index, i, fComplOSM)) {
-          MergeCare(cof1index, cof0index, i);
-          vvIndicesMerged[i].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
+          Merge(cof1index, cof0index, i, !(r & 1));
           BDDBuildOne(cof1index, i);
         } else {
           BDDBuildOne(cof0index, i);
@@ -1240,7 +1236,7 @@ public:
         }
       }
     }
-    Merge();
+    CompleteMerge();
   }
 };
 
@@ -1257,10 +1253,7 @@ public:
       int cof0, cof1;
       if(int r = Intersect(cof0index, cof1index, lev, fComplTSM)) {
         CopyFuncMasked(cof0index, cof1index, lev, !(r & 1));
-        MergeCare(cof0index, cof1index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-        }
+        Merge(cof0index, cof1index, lev, !(r & 1));
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else {
@@ -1307,8 +1300,7 @@ public:
         int cof1index = cof0index ^ 1;
         if(int r = Intersect(cof0index, cof1index, i, fComplTSM)) {
           CopyFuncMasked(cof0index, cof1index, i, !(r & 1));
-          MergeCare(cof0index, cof1index, i);
-          vvIndicesMerged[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+          Merge(cof0index, cof1index, i, !(r & 1));
           BDDBuildOne(cof0index, i);
         } else {
           BDDBuildOne(cof0index, i);
@@ -1316,7 +1308,7 @@ public:
         }
       }
     }
-    Merge();
+    CompleteMerge();
   }
 };
 
@@ -1332,17 +1324,11 @@ public:
       int cof1index = cof0index ^ 1;
       int cof0, cof1;
       if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
-        MergeCare(cof0index, cof1index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-        }
+        Merge(cof0index, cof1index, lev, !(r & 1));
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
-        MergeCare(cof1index, cof0index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
-        }
+        Merge(cof1index, cof0index, lev, !(r & 1));
         cof1 = BDDBuildOne(cof1index, lev);
         cof0 = cof1 ^ !(r & 1);
       } else {
@@ -1374,10 +1360,7 @@ public:
         it = std::find(vvIndices[lev].begin(), vvIndices[lev].end(), cof1index);
         vvIndices[lev].erase(it);
         CopyFuncMasked(cof0index, cof1index, lev, !(r & 1));
-        MergeCare(cof0index, cof1index, lev);
-        if(!vvIndicesMerged.empty()) {
-          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-        }
+        Merge(cof0index, cof1index, lev, !(r & 1));
         m[cof0index] = BDDBuildOne(cof0index, lev);
         m[cof1index] = m[cof0index] ^ !(r & 1);
       }
@@ -1427,13 +1410,11 @@ public:
         int cof1index = cof0index ^ 1;
         int cof0, cof1;
         if(int r = Include(cof0index, cof1index, i, fComplOSM)) {
-          MergeCare(cof0index, cof1index, i);
-          vvIndicesMerged[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+          Merge(cof0index, cof1index, i, !(r & 1));
           cof0 = BDDBuildOne(cof0index, i);
           cof1 = cof0 ^ !(r & 1);
         } else if(int r = Include(cof1index, cof0index, i, fComplOSM)) {
-          MergeCare(cof1index, cof0index, i);
-          vvIndicesMerged[i].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
+          Merge(cof1index, cof0index, i, !(r & 1));
           cof1 = BDDBuildOne(cof1index, i);
           cof0 = cof1 ^ !(r & 1);
         } else {
@@ -1465,14 +1446,13 @@ public:
           it = std::find(vvIndices[i].begin(), vvIndices[i].end(), cof1index);
           vvIndices[i].erase(it);
           CopyFuncMasked(cof0index, cof1index, i, !(r & 1));
-          MergeCare(cof0index, cof1index, i);
-          vvIndicesMerged[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+          Merge(cof0index, cof1index, i, !(r & 1));
           m[cof0index] = BDDBuildOne(cof0index, i);
           m[cof1index] = m[cof0index] ^ !(r & 1);
         }
       }
     }
-    Merge();
+    CompleteMerge();
   }
 };
 
@@ -1537,11 +1517,8 @@ public:
     if(r >= -2) {
       if(r >= 0) {
         CopyFuncMasked(r >> 1, index, lev, r & 1);
-        MergeCare(r >> 1, index, lev);
       }
-      if(!vvIndicesMerged.empty()) {
-        vvIndicesMerged[lev].push_back({r, index});
-      }
+      Merge(r >> 1, index, lev, r & 1);
       return r;
     }
     vvIndices[lev].push_back(index);
@@ -1565,7 +1542,7 @@ public:
         BDDBuildOne((index << 1) ^ 1, i);
       }
     }
-    Merge();
+    CompleteMerge();
   }
 };
 
