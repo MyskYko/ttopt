@@ -355,7 +355,7 @@ public:
     }
   }
 
-  virtual void SwapLevel(int lev) {
+  virtual void Swap(int lev) {
     auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
     auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
     std::swap(*it0, *it1);
@@ -381,18 +381,21 @@ public:
         t[i] ^= (t[i] >> shamt) & swapmask[d];
       }
     }
-    if(!vvIndices.empty()) {
-      for(int i = lev + 2; i < nInputs; i++) {
-        for(uint j = 0; j < vvIndices[i].size(); j++) {
-          int k = 1 << (i - (lev + 2));
-          if(vvIndices[i][j] / k % 4 == 1) {
-            vvIndices[i][j] += k;
-          } else if(vvIndices[i][j] / k % 4 == 2) {
-            vvIndices[i][j] -= k;
-          }
+  }
+
+  virtual int BDDSwap(int lev) {
+    Swap(lev);
+    for(int i = lev + 2; i < nInputs; i++) {
+      for(uint j = 0; j < vvIndices[i].size(); j++) {
+        int k = 1 << (i - (lev + 2));
+        if(vvIndices[i][j] / k % 4 == 1) {
+          vvIndices[i][j] += k;
+        } else if(vvIndices[i][j] / k % 4 == 2) {
+          vvIndices[i][j] -= k;
         }
       }
     }
+    return BDDRebuild(lev);
   }
 
   int SiftReo() {
@@ -421,8 +424,7 @@ public:
       vars.erase(maxit);
       int lev = vLevels[maxvar];
       for(int i = lev; i < nInputs - 1; i++) {
-        SwapLevel(i);
-        int count = BDDRebuild(i);
+        int count = BDDSwap(i);
         if(best > count) {
           best = count;
           updated = true;
@@ -434,8 +436,7 @@ public:
         Load(!turn);
         LoadIndices(!turn);
         for(int i = lev-1; i >= 0; i--) {
-          SwapLevel(i);
-          int count = BDDRebuild(i);
+          int count = BDDSwap(i);
           if(best > count) {
             best = count;
             updated = true;
@@ -452,18 +453,16 @@ public:
   }
 
   void Reo(std::vector<int> vLevelsNew) {
-    vvIndices.clear();
-    vvRedundantIndices.clear();
     for(int i = 0; i < nInputs; i++) {
       int var = std::find(vLevelsNew.begin(), vLevelsNew.end(), i) - vLevelsNew.begin();
       int lev = vLevels[var];
       if(lev < i) {
         for(int j = lev; j < i; j++) {
-          SwapLevel(j);
+          Swap(j);
         }
       } else if(lev > i) {
         for(int j = lev-1; j >= i; j--) {
-          SwapLevel(j);
+          Swap(j);
         }
       }
     }
@@ -631,8 +630,8 @@ public:
     CopyFunc(index, -1, lev, majority);
   }
 
-  void SwapLevel(int lev) override {
-    TruthTable::SwapLevel(lev);
+  void Swap(int lev) override {
+    TruthTable::Swap(lev);
     if(nInputs - lev - 1 > lww) {
       int nScopeSize = 1 << (nInputs - lev - 2 - lww);
       for(int i = nScopeSize; i < nSize; i += (nScopeSize << 2)) {
@@ -1158,8 +1157,7 @@ public:
     return BDDNodeCount();
   }
 
-  void SwapLevel(int lev) override {
-    TruthTableCare::SwapLevel(lev);
+  int BDDSwap(int lev) override {
     if(!vvIndices.empty()) {
       vvChildren[lev+1].clear();
       for(int i = lev + 2; i < nInputs; i++) {
@@ -1208,6 +1206,7 @@ public:
         vmRedundantIndices[i] = mRedundantIndicesNew;
       }
     }
+    return TruthTable::BDDSwap(lev);
   }
 
   void Optimize() override {
