@@ -1485,7 +1485,7 @@ public:
           fCompl &= !(~value & cvalue);
         }
         if(fEq || fCompl) {
-          return (index2 << 1) ^ fCompl;
+          return (index2 << 1) ^ !fEq;
         }
       }
     } else {
@@ -1525,12 +1525,16 @@ public:
     return index << 1;
   }
 
-  int BDDBuild() override {
-    Save(3);
+  void BDDBuildStartup() override {
     vvRedundantIndices.clear();
     vvRedundantIndices.resize(nInputs);
+    TruthTableCare::BDDBuildStartup();
+  }
+
+  int BDDBuild() override {
+    TruthTable::Save(3);
     TruthTable::BDDBuild();
-    Load(3);
+    TruthTable::Load(3);
     return BDDNodeCount();
   }
 
@@ -1566,8 +1570,8 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
   tt.Optimize();
   tt.BDDGenerateBlif(inputs, outputs, f);
