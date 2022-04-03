@@ -1012,7 +1012,7 @@ public:
     vvIndices[lev+1].clear();
     vvIndicesMerged[lev].clear();
     vvIndicesMerged[lev+1].clear();
-    for(int i = 0; i < lev+2; i++) {
+    for(int i = 0; i < lev + 2; i++) {
       vmRedundantIndices[i].clear();
     }
     RestoreCare();
@@ -1023,16 +1023,16 @@ public:
         }
       }
     }
-    for(int i = lev; i < lev + 2; i++) {
-      if(i == 0) {
+    for(int i = lev - 1; i < lev + 1; i++) {
+      if(i < 0) {
         for(int j = 0; j < nOutputs; j++) {
           if(!IsDC(j, 0)) {
             BDDBuildOne(j, 0);
           }
         }
       } else {
-        vvChildren[i-1].clear();
-        for(int index: vvIndices[i-1]) {
+        vvChildren[i].clear();
+        for(int index: vvIndices[i]) {
           BDDBuildChildren(index, i);
         }
       }
@@ -1041,10 +1041,10 @@ public:
       vvIndicesMerged[lev+2].clear();
       vvChildren[lev+1].clear();
       for(int index: vvIndices[lev+1]) {
-        BDDBuildChildren(index, lev+2, false);
+        BDDBuildChildren(index, lev + 1, false);
       }
     }
-    BDDReduce(lev+1);
+    BDDReduce(lev + 1);
     return BDDNodeCount();
   }
 
@@ -1084,24 +1084,24 @@ public:
     int cof0index = index << 1;
     int cof1index = cof0index ^ 1;
     int cof0, cof1;
-    if(IsDC(cof0index, lev)) {
-      cof1 = BDDBuildOneCare(cof1index, lev, fCare);
+    if(IsDC(cof0index, lev + 1)) {
+      cof1 = BDDBuildOneCare(cof1index, lev + 1, fCare);
       cof0 = cof1;
-    } else if(IsDC(cof1index, lev)) {
-      cof0 = BDDBuildOneCare(cof0index, lev, fCare);
+    } else if(IsDC(cof1index, lev + 1)) {
+      cof0 = BDDBuildOneCare(cof0index, lev + 1, fCare);
       cof1 = cof0;
     } else {
-      cof0 = BDDBuildOneCare(cof0index, lev, fCare);
-      cof1 = BDDBuildOneCare(cof1index, lev, fCare);
+      cof0 = BDDBuildOneCare(cof0index, lev + 1, fCare);
+      cof1 = BDDBuildOneCare(cof1index, lev + 1, fCare);
     }
-    vvChildren[lev-1].push_back(cof0);
-    vvChildren[lev-1].push_back(cof1);
+    vvChildren[lev].push_back(cof0);
+    vvChildren[lev].push_back(cof1);
   }
 
   int BDDBuild() override {
     BDDBuildStartup();
-    for(int i = 1; i < nInputs; i++) {
-      for(int index: vvIndices[i-1]) {
+    for(int i = 0; i < nInputs - 1; i++) {
+      for(int index: vvIndices[i]) {
         BDDBuildChildren(index, i);
       }
     }
