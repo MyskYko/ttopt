@@ -507,67 +507,9 @@ const TruthTable::word TruthTable::swapmask[] = {0x2222222222222222ull,
                                                  0x0000ff000000ff00ull,
                                                  0x00000000ffff0000ull};
 
-class TruthTableCare : public TruthTable {
+class TruthTableRewrite : public TruthTable {
 public:
-  std::vector<word> originalt;
-  std::vector<word> caret;
-  std::vector<word> care;
-
-  std::vector<std::vector<std::pair<int, int> > > vvIndicesMerged;
-
-  std::vector<std::vector<word> > savedcare;
-
-  TruthTableCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTable(onsets, nInputs) {
-    if(nSize) {
-      care.resize(nSize);
-    } else {
-      care.resize(1);
-    }
-    std::vector<int> count(1 << nInputs);
-    for(int i = 0; i < nBPats; i++) {
-      for(int j = 0; j < 8; j++) {
-        int pat = 0;
-        for(auto pBPat: pBPats) {
-          pat <<= 1;
-          pat |= (pBPat[i] >> j) & 1;
-        }
-        count[pat]++;
-        if(count[pat] == rarity) {
-          int index = pat / ww;
-          int pos = pat % ww;
-          care[index] |= 1ull << pos;
-        }
-      }
-    }
-  }
-
-  void RestoreCare() {
-    caret.clear();
-    if(nSize) {
-      for(int i = 0; i < nOutputs; i++) {
-        caret.insert(caret.end(), care.begin(), care.end());
-      }
-    } else {
-      caret.resize(nTotalSize);
-      for(int i = 0; i < nOutputs; i++) {
-        int padding = i * (1 << nInputs);
-        caret[padding / ww] |= care[0] << (padding % ww);
-      }
-    }
-  }
-
-  void Save(uint i) override {
-    TruthTable::Save(i);
-    if(savedcare.size() < i + 1) {
-      savedcare.resize(i + 1);
-    }
-    savedcare[i] = care;
-  }
-
-  void Load(uint i) override {
-    TruthTable::Load(i);
-    care = savedcare[i];
-  }
+  TruthTableRewrite(std::vector<std::vector<int> > const &onsets, int nInputs): TruthTable(onsets, nInputs) {}
 
   void SetValue(int index_lev, int lev, word value) {
     assert(index_lev >= 0);
@@ -631,6 +573,54 @@ public:
     }
     bool majority = count > (1 << (logwidth - 1));
     CopyFunc(index, -1, lev, majority);
+  }
+};
+
+class TruthTableCare : public TruthTableRewrite {
+public:
+  std::vector<word> originalt;
+  std::vector<word> caret;
+  std::vector<word> care;
+
+  std::vector<std::vector<std::pair<int, int> > > vvIndicesMerged;
+
+  std::vector<std::vector<word> > savedcare;
+
+  TruthTableCare(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableRewrite(onsets, nInputs) {
+    if(nSize) {
+      care.resize(nSize);
+    } else {
+      care.resize(1);
+    }
+    std::vector<int> count(1 << nInputs);
+    for(int i = 0; i < nBPats; i++) {
+      for(int j = 0; j < 8; j++) {
+        int pat = 0;
+        for(auto pBPat: pBPats) {
+          pat <<= 1;
+          pat |= (pBPat[i] >> j) & 1;
+        }
+        count[pat]++;
+        if(count[pat] == rarity) {
+          int index = pat / ww;
+          int pos = pat % ww;
+          care[index] |= 1ull << pos;
+        }
+      }
+    }
+  }
+
+  void Save(uint i) override {
+    TruthTable::Save(i);
+    if(savedcare.size() < i + 1) {
+      savedcare.resize(i + 1);
+    }
+    savedcare[i] = care;
+  }
+
+  void Load(uint i) override {
+    TruthTable::Load(i);
+    care = savedcare[i];
   }
 
   void Swap(int lev) override {
@@ -716,6 +706,21 @@ public:
     }
   }
 
+  void RestoreCare() {
+    caret.clear();
+    if(nSize) {
+      for(int i = 0; i < nOutputs; i++) {
+        caret.insert(caret.end(), care.begin(), care.end());
+      }
+    } else {
+      caret.resize(nTotalSize);
+      for(int i = 0; i < nOutputs; i++) {
+        int padding = i * (1 << nInputs);
+        caret[padding / ww] |= care[0] << (padding % ww);
+      }
+    }
+  }
+
   word GetCare(int index_lev, int lev) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= lww);
@@ -725,91 +730,47 @@ public:
     return (caret[index] >> pos) & ones[logwidth];
   }
 
-  bool IsDC(int index, int lev) {
-    if(nInputs - lev > lww) {
-      int nScopeSize = 1 << (nInputs - lev - lww);
-      for(int i = 0; i < nScopeSize; i++) {
-        word value = caret[nScopeSize * index + i];
-        if(value != 0) {
-          return false;
-        }
-      }
-      return true;
-    }
-    word value = GetCare(index, lev);
-    if(value != 0) {
-      return false;
-    }
-    return true;
-  }
-
-  void MergeCare(int index1, int index2, int lev) {
+  void CopyFuncMasked(int index1, int index2, int lev, bool fCompl) {
+    assert(index1 >= 0);
     assert(index2 >= 0);
-    if(index1 < 0) {
-      return;
-    }
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize; i++) {
-        caret[nScopeSize * index1 + i] |= caret[nScopeSize * index2 + i];
+        word value = t[nScopeSize * index2 + i];
+        if(fCompl) {
+          value = ~value;
+        }
+        word cvalue = caret[nScopeSize * index2 + i];
+        t[nScopeSize * index1 + i] &= ~cvalue;
+        t[nScopeSize * index1 + i] |= cvalue & value;
       }
     } else {
-      word value = GetCare(index2, lev);
-      int index = index1 >> (lww - logwidth);
-      int pos = (index1 % (1 << (lww - logwidth))) << logwidth;
-      caret[index] |= value << pos;
+      word one = ones[logwidth];
+      word value1 = GetValue(index1, lev);
+      word value2 = GetValue(index2, lev);
+      if(fCompl) {
+        value2 ^= one;
+      }
+      word cvalue = GetCare(index2, lev);
+      value1 &= cvalue ^ one;
+      value1 |= cvalue & value2;
+      SetValue(index1, lev, value1);
     }
   }
 
-  int BDDBuildOne(int index, int lev) override {
-    int r = BDDFind(index, lev);
-    if(r >= -2) {
-      if(r >= 0) {
-        MergeCare(r >> 1, index, lev);
+  bool IsDC(int index, int lev) {
+    if(nInputs - lev > lww) {
+      int nScopeSize = 1 << (nInputs - lev - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        if(caret[nScopeSize * index + i]) {
+          return false;
+        }
       }
-      if(!vvIndicesMerged.empty()) {
-        vvIndicesMerged[lev].push_back({r, index});
-      }
-      return r;
+    } else if(GetCare(index, lev)) {
+      return false;
     }
-    vvIndices[lev].push_back(index);
-    return index << 1;
-  }
-
-  void Merge() {
-    for(int i = nInputs - 1; i >= 0; i--) {
-      for(auto it = vvIndicesMerged[i].rbegin(); it != vvIndicesMerged[i].rend(); it++) {
-        CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
-      }
-    }
-  }
-
-  void BDDBuildStartup() override {
-    RestoreCare();
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDBuildOne(i, 0);
-      }
-    }
-  }
-
-  void OptimizationStartup() {
-    RestoreCare();
-    originalt = t;
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    vvIndicesMerged.clear();
-    vvIndicesMerged.resize(nInputs);
-    for(int i = 0; i < nOutputs; i++) {
-      if(!IsDC(i, 0)) {
-        BDDBuildOne(i, 0);
-      } else {
-        ShiftToMajority(i, 0);
-      }
-    }
+    return true;
   }
 
   int Include(int index1, int index2, int lev, bool fCompl) {
@@ -855,40 +816,78 @@ public:
     return 2 * fCompl + fEq;
   }
 
-  void CopyFuncMasked(int index1, int index2, int lev, bool fCompl) {
-    assert(index1 >= 0);
+  void MergeCare(int index1, int index2, int lev) {
     assert(index2 >= 0);
+    if(index1 < 0) {
+      return;
+    }
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize; i++) {
-        word value = t[nScopeSize * index2 + i];
-        if(fCompl) {
-          value = ~value;
-        }
-        word cvalue = caret[nScopeSize * index2 + i];
-        t[nScopeSize * index1 + i] &= ~cvalue;
-        t[nScopeSize * index1 + i] |= cvalue & value;
+        caret[nScopeSize * index1 + i] |= caret[nScopeSize * index2 + i];
       }
     } else {
-      word one = ones[logwidth];
-      word value1 = GetValue(index1, lev);
-      word value2 = GetValue(index2, lev);
-      if(fCompl) {
-        value2 ^= one;
-      }
-      word cvalue = GetCare(index2, lev);
-      value1 &= cvalue ^ one;
-      value1 |= cvalue & value2;
-      SetValue(index1, lev, value1);
+      word value = GetCare(index2, lev);
+      int index = index1 >> (lww - logwidth);
+      int pos = (index1 % (1 << (lww - logwidth))) << logwidth;
+      caret[index] |= value << pos;
     }
   }
 
-  virtual void Optimize() = 0;
+  int BDDBuildOne(int index, int lev) override {
+    int r = BDDFind(index, lev);
+    if(r >= -2) {
+      MergeCare(r >> 1, index, lev);
+      if(!vvIndicesMerged.empty()) {
+        vvIndicesMerged[lev].push_back({r, index});
+      }
+      return r;
+    }
+    vvIndices[lev].push_back(index);
+    return index << 1;
+  }
+
+  void Merge() {
+    for(int i = nInputs - 1; i >= 0; i--) {
+      for(auto it = vvIndicesMerged[i].rbegin(); it != vvIndicesMerged[i].rend(); it++) {
+        CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
+      }
+    }
+  }
+
+  void BDDBuildStartup() override {
+    RestoreCare();
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(!IsDC(i, 0)) {
+        BDDBuildOne(i, 0);
+      }
+    }
+  }
 
   int BDDRebuild(int i) override {
     return BDDBuild();
   }
+
+  void OptimizationStartup() {
+    originalt = t;
+    RestoreCare();
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    vvIndicesMerged.clear();
+    vvIndicesMerged.resize(nInputs);
+    for(int i = 0; i < nOutputs; i++) {
+      if(!IsDC(i, 0)) {
+        BDDBuildOne(i, 0);
+      } else {
+        ShiftToMajority(i, 0);
+      }
+    }
+  }
+
+  virtual void Optimize() = 0;
 };
 
 class TruthTableCareReduce : public TruthTableCare {
@@ -1504,8 +1503,9 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
   tt.Optimize();
