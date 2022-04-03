@@ -848,7 +848,7 @@ public:
     return index << 1;
   }
 
-  int BDDBuildOneCare(int index, int lev, bool fCare) {
+  int BDDBuildOneCare(int index, int lev, bool fCare = true) {
     int r = BDDFind(index, lev);
     if(r >= -2) {
       if(fCare) {
@@ -1117,13 +1117,13 @@ public:
         int cof1index = cof0index ^ 1;
         if(IsDC(cof0index, i)) {
           vvIndicesMerged[i].push_back({cof1index << 1, cof0index});
-          BDDBuildOne(cof1index, i);
+          BDDBuildOneCare(cof1index, i);
         } else if(IsDC(cof1index, i)) {
           vvIndicesMerged[i].push_back({cof0index << 1, cof1index});
-          BDDBuildOne(cof0index, i);
+          BDDBuildOneCare(cof0index, i);
         } else {
-          BDDBuildOne(cof0index, i);
-          BDDBuildOne(cof1index, i);
+          BDDBuildOneCare(cof0index, i);
+          BDDBuildOneCare(cof1index, i);
         }
       }
     }
