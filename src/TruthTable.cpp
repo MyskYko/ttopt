@@ -990,93 +990,139 @@ public:
     TruthTableCareReduce::BDDBuildStartup();
   }
 
-  int BDDRebuild(int lev) override = 0;
-};
+  virtual void BDDBuildLevel(int lev) = 0;
 
-class TruthTableOSDM : public TruthTableCareReduceRebuild {
-public:
-  TruthTableOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCareReduceRebuild(onsets, nInputs, pBPats, nBPats, rarity) {}
-
-  int BDDBuildOneCare(int index, int lev, bool fCare) {
-    int r = BDDFind(index, lev);
-    if(r >= -2) {
-      if(fCare) {
-        MergeCare(r >> 1, index, lev);
-      }
-      if(!vvIndicesMerged.empty()) {
-        vvIndicesMerged[lev].push_back({r, index});
-      }
-      return r;
+  virtual void BDDRebuildByMerge(int lev) {
+    for(auto &p: vvIndicesMerged[lev]) {
+      MergeCare(p.first >> 1, p.second, lev);
     }
-    vvIndices[lev].push_back(index);
-    return index << 1;
-  }
-
-  void BDDBuildChildren(int index, int lev, bool fCare = true) {
-    int cof0index = index << 1;
-    int cof1index = cof0index ^ 1;
-    int cof0, cof1;
-    if(IsDC(cof0index, lev + 1)) {
-      cof1 = BDDBuildOneCare(cof1index, lev + 1, fCare);
-      cof0 = cof1;
-    } else if(IsDC(cof1index, lev + 1)) {
-      cof0 = BDDBuildOneCare(cof0index, lev + 1, fCare);
-      cof1 = cof0;
-    } else {
-      cof0 = BDDBuildOneCare(cof0index, lev + 1, fCare);
-      cof1 = BDDBuildOneCare(cof1index, lev + 1, fCare);
-    }
-    vvChildren[lev].push_back(cof0);
-    vvChildren[lev].push_back(cof1);
-  }
-
-  int BDDBuild() override {
-    BDDBuildStartup();
-    for(int i = 0; i < nInputs - 1; i++) {
-      for(int index: vvIndices[i]) {
-        BDDBuildChildren(index, i);
-      }
-    }
-    BDDReduce(nInputs - 2);
-    return BDDNodeCount();
   }
 
   int BDDRebuild(int lev) override {
-    vvIndices[lev].clear();
-    vvIndices[lev+1].clear();
-    vvIndicesMerged[lev].clear();
-    vvIndicesMerged[lev+1].clear();
-    for(int i = 0; i < lev + 2; i++) {
+    RestoreCare();
+    for(int i = lev; i < nInputs; i++) {
+      if(i) {
+        vvChildren[i-1].clear();
+      }
+      vvIndices[i].clear();
+      vvIndicesMerged[i].clear();
+    }
+    for(int i = 0; i < nInputs; i++) {
       vmRedundantIndices[i].clear();
     }
-    RestoreCare();
     for(int i = 0; i < lev; i++) {
-      for(auto &p: vvIndicesMerged[i]) {
-        if(p.first >= 0) {
-          MergeCare(p.first >> 1, p.second, i);
-        }
-      }
+      BDDRebuildByMerge(i);
     }
-    for(int i = lev - 1; i < lev + 1; i++) {
-      if(i < 0) {
+    for(int i = lev; i < nInputs; i++) {
+      if(!i) {
         for(int j = 0; j < nOutputs; j++) {
           if(!IsDC(j, 0)) {
             BDDBuildOne(j, 0);
           }
         }
       } else {
-        vvChildren[i].clear();
-        for(int index: vvIndices[i]) {
-          BDDBuildChildren(index, i);
+        BDDBuildLevel(i);
+      }
+    }
+    BDDReduce(nInputs - 2);
+    return BDDNodeCount();
+  }
+};
+
+class TruthTableOSDM : public TruthTableCareReduceRebuild {
+public:
+  TruthTableOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCareReduceRebuild(onsets, nInputs, pBPats, nBPats, rarity) {}
+
+  void BDDBuildLevel(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0index = index << 1;
+      int cof1index = cof0index ^ 1;
+      int cof0, cof1;
+      if(IsDC(cof0index, lev)) {
+        cof1 = BDDBuildOne(cof1index, lev);
+        cof0 = cof1;
+      } else if(IsDC(cof1index, lev)) {
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = cof0;
+      } else {
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = BDDBuildOne(cof1index, lev);
+      }
+      vvChildren[lev-1].push_back(cof0);
+      vvChildren[lev-1].push_back(cof1);
+    }
+  }
+
+  int BDDBuild() override {
+    BDDBuildStartup();
+    for(int i = 1; i < nInputs; i++) {
+      BDDBuildLevel(i);
+    }
+    BDDReduce(nInputs - 2);
+    return BDDNodeCount();
+  }
+
+  int BDDBuildOneNoCare(int index, int lev) {
+    int r = BDDFind(index, lev);
+    if(r >= -2) {
+      vvIndicesMerged[lev].push_back({r, index});
+      return r;
+    }
+    vvIndices[lev].push_back(index);
+    return index << 1;
+  }
+
+  void BDDBuildLevelNoCare(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0index = index << 1;
+      int cof1index = cof0index ^ 1;
+      int cof0, cof1;
+      if(IsDC(cof0index, lev)) {
+        cof1 = BDDBuildOneNoCare(cof1index, lev);
+        cof0 = cof1;
+      } else if(IsDC(cof1index, lev)) {
+        cof0 = BDDBuildOneNoCare(cof0index, lev);
+        cof1 = cof0;
+      } else {
+        cof0 = BDDBuildOneNoCare(cof0index, lev);
+        cof1 = BDDBuildOneNoCare(cof1index, lev);
+      }
+      vvChildren[lev-1].push_back(cof0);
+      vvChildren[lev-1].push_back(cof1);
+    }
+  }
+
+  int BDDRebuild(int lev) override {
+    RestoreCare();
+    vvIndices[lev].clear();
+    vvIndices[lev+1].clear();
+    vvIndicesMerged[lev].clear();
+    vvIndicesMerged[lev+1].clear();
+    if(lev) {
+      vvChildren[lev-1].clear();
+    }
+    vvChildren[lev].clear();
+    for(int i = 0; i < lev + 2; i++) {
+      vmRedundantIndices[i].clear();
+    }
+    for(int i = 0; i < lev; i++) {
+      BDDRebuildByMerge(i);
+    }
+    for(int i = lev; i < lev + 2; i++) {
+      if(!i) {
+        for(int j = 0; j < nOutputs; j++) {
+          if(!IsDC(j, 0)) {
+            BDDBuildOne(j, 0);
+          }
         }
+      } else {
+        BDDBuildLevel(i);
       }
     }
     if(lev < nInputs - 2) {
       vvIndicesMerged[lev+2].clear();
       vvChildren[lev+1].clear();
-      for(int index: vvIndices[lev+1]) {
-        BDDBuildChildren(index, lev + 1, false);
-      }
+      BDDBuildLevelNoCare(lev + 2);
     }
     BDDReduce(lev + 1);
     return BDDNodeCount();
@@ -1137,70 +1183,38 @@ public:
 
   TruthTableOSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplOSM = true): TruthTableCareReduceRebuild(onsets, nInputs, pBPats, nBPats, rarity), fComplOSM(fComplOSM) {}
 
-  void BDDBuildChildren(int index, int lev) {
-    int cof0index = index << 1;
-    int cof1index = cof0index ^ 1;
-    int cof0, cof1;
-    if(int r = Include(cof0index, cof1index, lev + 1, fComplOSM)) {
-      MergeCare(cof0index, cof1index, lev + 1);
-      vvIndicesMerged[lev + 1].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-      cof0 = BDDBuildOne(cof0index, lev + 1);
-      cof1 = cof0 ^ !(r & 1);
-    } else if(int r = Include(cof1index, cof0index, lev + 1, fComplOSM)) {
-      MergeCare(cof1index, cof0index, lev + 1);
-      vvIndicesMerged[lev + 1].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
-      cof1 = BDDBuildOne(cof1index, lev + 1);
-      cof0 = cof1 ^ !(r & 1);
-    } else {
-      cof0 = BDDBuildOne(cof0index, lev + 1);
-      cof1 = BDDBuildOne(cof1index, lev + 1);
+  void BDDBuildLevel(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0index = index << 1;
+      int cof1index = cof0index ^ 1;
+      int cof0, cof1;
+      if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
+        MergeCare(cof0index, cof1index, lev);
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        }
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = cof0 ^ !(r & 1);
+      } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
+        MergeCare(cof1index, cof0index, lev);
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
+        }
+        cof1 = BDDBuildOne(cof1index, lev);
+        cof0 = cof1 ^ !(r & 1);
+      } else {
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = BDDBuildOne(cof1index, lev);
+      }
+      vvChildren[lev-1].push_back(cof0);
+      vvChildren[lev-1].push_back(cof1);
     }
-    vvChildren[lev].push_back(cof0);
-    vvChildren[lev].push_back(cof1);
   }
 
   int BDDBuild() override {
     BDDBuildStartup();
-    for(int i = 0; i < nInputs - 1; i++) {
-      for(int index: vvIndices[i]) {
-        BDDBuildChildren(index, i);
-      }
-    }
-    BDDReduce(nInputs - 2);
-    return BDDNodeCount();
-  }
-
-  int BDDRebuild(int lev) {
-    for(int i = lev; i < nInputs; i++) {
-      if(i > 0) {
-        vvChildren[i-1].clear();
-      }
-      vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
-    }
-    for(int i = 0; i < nInputs; i++) {
-      vmRedundantIndices[i].clear();
-    }
-    RestoreCare();
-    for(int i = 0; i < lev; i++) {
-      for(auto &p: vvIndicesMerged[i]) {
-        if(p.first >= 0) {
-          MergeCare(p.first >> 1, p.second, i);
-        }
-      }
-    }
-    for(int i = lev - 1; i < nInputs - 1; i++) {
-      if(i < 0) {
-        for(int j = 0; j < nOutputs; j++) {
-          if(!IsDC(j, 0)) {
-            BDDBuildOne(j, 0);
-          }
-        }
-      } else {
-        for(int index: vvIndices[i]) {
-          BDDBuildChildren(index, i);
-        }
-      }
+    for(int i = 1; i < nInputs; i++) {
+      BDDBuildLevel(i);
     }
     BDDReduce(nInputs - 2);
     return BDDNodeCount();
@@ -1236,74 +1250,53 @@ public:
 
   TruthTableTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity, bool fComplTSM = true): TruthTableCareReduceRebuild(onsets, nInputs, pBPats, nBPats, rarity), fComplTSM(fComplTSM) {}
 
-  void BDDBuildChildren(int index, int lev) {
-    int cof0index = index << 1;
-    int cof1index = cof0index ^ 1;
-    int cof0, cof1;
-    if(int r = Intersect(cof0index, cof1index, lev + 1, fComplTSM)) {
-      CopyFuncMasked(cof0index, cof1index, lev + 1, !(r & 1));
-      MergeCare(cof0index, cof1index, lev + 1);
-      vvIndicesMerged[lev + 1].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
-      cof0 = BDDBuildOne(cof0index, lev + 1);
-      cof1 = cof0 ^ !(r & 1);
-    } else {
-      cof0 = BDDBuildOne(cof0index, lev + 1);
-      cof1 = BDDBuildOne(cof1index, lev + 1);
+  void BDDBuildLevel(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0index = index << 1;
+      int cof1index = cof0index ^ 1;
+      int cof0, cof1;
+      if(int r = Intersect(cof0index, cof1index, lev, fComplTSM)) {
+        CopyFuncMasked(cof0index, cof1index, lev, !(r & 1));
+        MergeCare(cof0index, cof1index, lev);
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        }
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = cof0 ^ !(r & 1);
+      } else {
+        cof0 = BDDBuildOne(cof0index, lev);
+        cof1 = BDDBuildOne(cof1index, lev);
+      }
+      vvChildren[lev-1].push_back(cof0);
+      vvChildren[lev-1].push_back(cof1);
     }
-    vvChildren[lev].push_back(cof0);
-    vvChildren[lev].push_back(cof1);
   }
 
-  int BDDBuild() {
+  int BDDBuild() override {
     TruthTable::Save(3);
     BDDBuildStartup();
-    for(int i = 0; i < nInputs - 1; i++) {
-      for(int index: vvIndices[i]) {
-        BDDBuildChildren(index, i);
-      }
+    for(int i = 1; i < nInputs; i++) {
+      BDDBuildLevel(i);
     }
     BDDReduce(nInputs - 2);
     TruthTable::Load(3);
     return BDDNodeCount();
   }
 
-  int BDDRebuild(int lev) {
+  void BDDRebuildByMerge(int lev) override {
+    for(auto &p: vvIndicesMerged[lev]) {
+      if(p.first >= 0) {
+        CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
+      }
+      MergeCare(p.first >> 1, p.second, lev);
+    }
+  }
+
+  int BDDRebuild(int lev) override {
     TruthTable::Save(3);
-    for(int i = lev; i < nInputs; i++) {
-      if(i > 0) {
-        vvChildren[i-1].clear();
-      }
-      vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
-    }
-    for(int i = 0; i < nInputs; i++) {
-      vmRedundantIndices[i].clear();
-    }
-    RestoreCare();
-    for(int i = 0; i < lev; i++) {
-      for(auto &p: vvIndicesMerged[i]) {
-        if(p.first >= 0) {
-          CopyFuncMasked(p.first >> 1, p.second, i, p.first & 1);
-          MergeCare(p.first >> 1, p.second, i);
-        }
-      }
-    }
-    for(int i = lev - 1; i < nInputs - 1; i++) {
-      if(i < 0) {
-        for(int j = 0; j < nOutputs; j++) {
-          if(!IsDC(j, 0)) {
-            BDDBuildOne(j, 0);
-          }
-        }
-      } else {
-        for(int index: vvIndices[i]) {
-          BDDBuildChildren(index, i);
-        }
-      }
-    }
-    BDDReduce(nInputs - 2);
+    int r = TruthTableCareReduceRebuild::BDDRebuild(lev);
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   void Optimize() override {
@@ -1340,12 +1333,16 @@ public:
       int cof0, cof1;
       if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
         MergeCare(cof0index, cof1index, lev);
-        vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        }
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
         MergeCare(cof1index, cof0index, lev);
-        vvIndicesMerged[lev].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
+        }
         cof1 = BDDBuildOne(cof1index, lev);
         cof0 = cof1 ^ !(r & 1);
       } else {
@@ -1378,7 +1375,9 @@ public:
         vvIndices[lev].erase(it);
         CopyFuncMasked(cof0index, cof1index, lev, !(r & 1));
         MergeCare(cof0index, cof1index, lev);
-        vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        if(!vvIndicesMerged.empty()) {
+          vvIndicesMerged[lev].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
+        }
         m[cof0index] = BDDBuildOne(cof0index, lev);
         m[cof1index] = m[cof0index] ^ !(r & 1);
       }
@@ -1393,51 +1392,30 @@ public:
   }
 
   int BDDBuild() override {
-    Save(3);
+    TruthTable::Save(3);
     BDDBuildStartup();
     for(int i = 1; i < nInputs; i++) {
       BDDBuildLevel(i);
     }
     BDDReduce(nInputs - 2);
-    Load(3);
+    TruthTable::Load(3);
     return BDDNodeCount();
   }
 
-  int BDDRebuild(int lev) {
+  void BDDRebuildByMerge(int lev) override {
+    for(auto &p: vvIndicesMerged[lev]) {
+      if(p.first >= 0) {
+        CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
+      }
+      MergeCare(p.first >> 1, p.second, lev);
+    }
+  }
+
+  int BDDRebuild(int lev) override {
     TruthTable::Save(3);
-    for(int i = lev; i < nInputs; i++) {
-      if(i > 0) {
-        vvChildren[i-1].clear();
-      }
-      vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
-    }
-    for(int i = 0; i < nInputs; i++) {
-      vmRedundantIndices[i].clear();
-    }
-    RestoreCare();
-    for(int i = 0; i < lev; i++) {
-      for(auto &p: vvIndicesMerged[i]) {
-        if(p.first >= 0) {
-          CopyFuncMasked(p.first >> 1, p.second, i, p.first & 1);
-          MergeCare(p.first >> 1, p.second, i);
-        }
-      }
-    }
-    for(int i = lev; i < nInputs; i++) {
-      if(i == 0) {
-        for(int j = 0; j < nOutputs; j++) {
-          if(!IsDC(j, 0)) {
-            BDDBuildOne(j, 0);
-          }
-        }
-      } else {
-        BDDBuildLevel(i);
-      }
-    }
-    BDDReduce(nInputs - 2);
+    int r = TruthTableCareReduceRebuild::BDDRebuild(lev);
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   void Optimize() override {
