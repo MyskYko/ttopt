@@ -314,6 +314,7 @@ public:
   }
 
   virtual void Swap(int lev) {
+    assert(lev < nInputs - 1);
     auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
     auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
     std::swap(*it0, *it1);
@@ -341,18 +342,22 @@ public:
     }
   }
 
+  void SwapIndex(int &index, int d) {
+    if((index >> d) % 4 == 1) {
+      index += 1 << d;
+    } else if((index >> d) % 4 == 2) {
+      index -= 1 << d;
+    }
+  }
+
   virtual int BDDSwap(int lev) {
     Swap(lev);
     for(int i = lev + 2; i < nInputs; i++) {
       for(uint j = 0; j < vvIndices[i].size(); j++) {
-        int k = 1 << (i - (lev + 2));
-        if(vvIndices[i][j] / k % 4 == 1) {
-          vvIndices[i][j] += k;
-        } else if(vvIndices[i][j] / k % 4 == 2) {
-          vvIndices[i][j] -= k;
-        }
+        SwapIndex(vvIndices[i][j], i - (lev + 2));
       }
     }
+    // swapping vvRedundantIndices is unnecessary for node counting
     return BDDRebuild(lev);
   }
 
@@ -1131,6 +1136,7 @@ public:
     }
     if(lev < nInputs - 2) {
       vvIndicesMerged[lev+2].clear();
+      vvChildren[lev+1].clear();
       for(int index: vvIndices[lev+1]) {
         int cof0index = index << 1;
         int cof1index = cof0index ^ 1;
@@ -1158,53 +1164,28 @@ public:
   }
 
   int BDDSwap(int lev) override {
-    if(!vvIndices.empty()) {
-      vvChildren[lev+1].clear();
-      for(int i = lev + 2; i < nInputs; i++) {
-        int k = 1 << (i - (lev + 2));
-        for(int &index: vvChildren[i-1]) {
-          if((index >> 1) / k % 4 == 1) {
-            index += k << 1;
-          } else if((index >> 1) / k % 4 == 2) {
-            index -= k << 1;
-          }
-        }
-        for(auto &p: vvIndicesMerged[i]) {
-          if(p.first >= 0) {
-            if((p.first >> 1) / k % 4 == 1) {
-              p.first += k << 1;
-            } else if((p.first >> 1) / k % 4 == 2) {
-              p.first -= k << 1;
-            }
-          }
-          if(p.second / k % 4 == 1) {
-            p.second += k;
-          } else if(p.second / k % 4 == 2) {
-            p.second -= k;
-          }
-        }
-        std::map<int, std::pair<int, int> > mRedundantIndicesNew;
-        for(auto p: vmRedundantIndices[i]) {
-          int index = p.first;
-          if(index / k % 4 == 1) {
-            index += k;
-          } else if(index / k % 4 == 2) {
-            index -= k;
-          }
-          int i2 = p.second.first;
-          int index2 = p.second.second;
-          if(i2 < nInputs) {
-            int k2 = 1 << (i2 - (lev + 2));
-            if((index2 >> 1) / k2 % 4 == 1) {
-              index2 += k2 << 1;
-            } else if((index2 >> 1) / k2 % 4 == 2) {
-              index2 -= k2 << 1;
-            }
-          }
-          mRedundantIndicesNew[index] = {i2, index2};
-        }
-        vmRedundantIndices[i] = mRedundantIndicesNew;
+    for(int i = lev + 2; i < nInputs; i++) {
+      for(int &index: vvChildren[i]) {
+        SwapIndex(index, i - (lev + 2) + 2);
       }
+      for(auto &p: vvIndicesMerged[i]) {
+        if(p.first >= 0) {
+          SwapIndex(p.first, i - (lev + 2) + 1);
+        }
+        SwapIndex(p.second, i - (lev + 2));
+      }
+      std::map<int, std::pair<int, int> > mRedundantIndicesNew;
+      for(auto &p: vmRedundantIndices[i]) {
+        int index = p.first;
+        SwapIndex(index, i - (lev + 2));
+        int i2 = p.second.first;
+        int index2 = p.second.second;
+        if(i2 < nInputs) {
+          SwapIndex(index2, i2 - (lev + 2) + 1);
+        }
+        mRedundantIndicesNew[index] = {i2, index2};
+      }
+      vmRedundantIndices[i] = mRedundantIndicesNew;
     }
     return TruthTable::BDDSwap(lev);
   }
@@ -1586,7 +1567,8 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   tt.RandomSiftReo(20);
   tt.Optimize();
   tt.BDDGenerateBlif(inputs, outputs, f);
