@@ -313,48 +313,6 @@ public:
     return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[logwidth]));
   }
 
-  int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
-    int r = BDDFind(index, lev);
-    if(r >= 0) {
-      auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
-      int i = it - vvIndices[lev].begin();
-      return (vvNodes[lev][i] << 1) ^ (r & 1);
-    }
-    if(r >= -2) {
-      return r + 2;
-    }
-    int cof0 = BDDGenerateBlifRec(vvNodes, nNodes, index << 1, lev + 1, f, prefix);
-    int cof1 = BDDGenerateBlifRec(vvNodes, nNodes, (index << 1) ^ 1, lev + 1, f, prefix);
-    if(cof0 == cof1) {
-      return cof0;
-    }
-    f << ".names " << prefix << "v" << lev << " " << prefix << "n" << (cof0 >> 1) << " " << prefix << "n" << (cof1 >> 1) << " " << prefix << "n" << nNodes << std::endl;
-    f << (Imply(index << 1, (index << 1) ^ 1, lev + 1)? "-" : "0") << !(cof0 & 1) << "- 1" << std::endl;
-    f << (Imply((index << 1) ^ 1, index << 1, lev + 1)? "--" : "1-") << !(cof1 & 1) << " 1" << std::endl;
-    vvIndices[lev].push_back(index);
-    vvNodes[lev].push_back(nNodes);
-    return (nNodes++) << 1;
-  }
-
-  void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
-    std::string prefix = outputs.front();
-    int nNodes = 1; // const node
-    vvIndices.clear();
-    vvIndices.resize(nInputs);
-    std::vector<std::vector<int> > vvNodes(nInputs);
-    std::vector<int> vOutputs;
-    f << ".names " << prefix << "n0" << std::endl;
-    for(int i = 0; i < nInputs; i++) {
-      f << ".names " << inputs[i] << " " << prefix << "v" << vLevels[i] << std::endl;
-      f << "1 1" << std::endl;
-    }
-    for(int i = 0; i < nOutputs; i++) {
-      int node = BDDGenerateBlifRec(vvNodes, nNodes, i, 0, f, prefix);
-      f << ".names " << prefix << "n" << (node >> 1) << " " << outputs[i] << std::endl;
-      f << !(node & 1) << " 1" << std::endl;
-    }
-  }
-
   virtual void Swap(int lev) {
     auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
     auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
@@ -485,6 +443,48 @@ public:
     }
     Load(2);
     return best;
+  }
+
+  int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
+    int r = BDDFind(index, lev);
+    if(r >= 0) {
+      auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
+      int i = it - vvIndices[lev].begin();
+      return (vvNodes[lev][i] << 1) ^ (r & 1);
+    }
+    if(r >= -2) {
+      return r + 2;
+    }
+    int cof0 = BDDGenerateBlifRec(vvNodes, nNodes, index << 1, lev + 1, f, prefix);
+    int cof1 = BDDGenerateBlifRec(vvNodes, nNodes, (index << 1) ^ 1, lev + 1, f, prefix);
+    if(cof0 == cof1) {
+      return cof0;
+    }
+    f << ".names " << prefix << "v" << lev << " " << prefix << "n" << (cof0 >> 1) << " " << prefix << "n" << (cof1 >> 1) << " " << prefix << "n" << nNodes << std::endl;
+    f << (Imply(index << 1, (index << 1) ^ 1, lev + 1)? "-" : "0") << !(cof0 & 1) << "- 1" << std::endl;
+    f << (Imply((index << 1) ^ 1, index << 1, lev + 1)? "--" : "1-") << !(cof1 & 1) << " 1" << std::endl;
+    vvIndices[lev].push_back(index);
+    vvNodes[lev].push_back(nNodes);
+    return (nNodes++) << 1;
+  }
+
+  void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
+    std::string prefix = outputs.front();
+    int nNodes = 1; // const node
+    vvIndices.clear();
+    vvIndices.resize(nInputs);
+    std::vector<std::vector<int> > vvNodes(nInputs);
+    std::vector<int> vOutputs;
+    f << ".names " << prefix << "n0" << std::endl;
+    for(int i = 0; i < nInputs; i++) {
+      f << ".names " << inputs[i] << " " << prefix << "v" << vLevels[i] << std::endl;
+      f << "1 1" << std::endl;
+    }
+    for(int i = 0; i < nOutputs; i++) {
+      int node = BDDGenerateBlifRec(vvNodes, nNodes, i, 0, f, prefix);
+      f << ".names " << prefix << "n" << (node >> 1) << " " << outputs[i] << std::endl;
+      f << !(node & 1) << " 1" << std::endl;
+    }
   }
 };
 
