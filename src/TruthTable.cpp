@@ -1531,9 +1531,16 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  // TruthTable tt(onsets, nInputs);
-  // tt.RandomSiftReo(20);
-  // tt.BDDGenerateBlif(inputs, outputs, f);
+  if(!rarity) {
+    TruthTable tt(onsets, nInputs);
+    tt.RandomSiftReo(20);
+    tt.BDDGenerateBlif(inputs, outputs, f);
+  } else {
+    TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+    tt.RandomSiftReo(20);
+    tt.Optimize();
+    tt.BDDGenerateBlif(inputs, outputs, f);
+  }
 
   // TruthTableReo tt(onsets, nInputs);
   // tt.RandomSiftReo(20);
@@ -1557,10 +1564,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
