@@ -586,7 +586,7 @@ public:
   std::vector<word> caret;
   std::vector<word> care;
 
-  std::vector<std::vector<std::pair<int, int> > > vvIndicesMerged;
+  std::vector<std::vector<std::pair<int, int> > > vvMergedIndices;
 
   std::vector<std::vector<word> > savedcare;
 
@@ -841,8 +841,8 @@ public:
 
   void Merge(int index1, int index2, int lev, bool fCompl) {
     MergeCare(index1, index2, lev);
-    if(!vvIndicesMerged.empty()) {
-      vvIndicesMerged[lev].push_back({(index1 << 1) ^ fCompl, index2});
+    if(!vvMergedIndices.empty()) {
+      vvMergedIndices[lev].push_back({(index1 << 1) ^ fCompl, index2});
     }
   }
 
@@ -858,7 +858,7 @@ public:
 
   void CompleteMerge() {
     for(int i = nInputs - 1; i >= 0; i--) {
-      for(auto it = vvIndicesMerged[i].rbegin(); it != vvIndicesMerged[i].rend(); it++) {
+      for(auto it = vvMergedIndices[i].rbegin(); it != vvMergedIndices[i].rend(); it++) {
         CopyFunc((*it).second, (*it).first >> 1, i, (*it).first & 1);
       }
     }
@@ -886,8 +886,8 @@ public:
     RestoreCare();
     vvIndices.clear();
     vvIndices.resize(nInputs);
-    vvIndicesMerged.clear();
-    vvIndicesMerged.resize(nInputs);
+    vvMergedIndices.clear();
+    vvMergedIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
         BDDBuildOne(i, 0);
@@ -982,7 +982,7 @@ class TruthTableCareReduceRebuild : public TruthTableCareReduce {
 public:
   std::vector<std::vector<std::vector<int> > > vvChildrenSaved;
   std::vector<std::vector<std::map<int, std::pair<int, int> > > > vmRedundantIndicesSaved;
-  std::vector<std::vector<std::vector<std::pair<int, int> > > > vvIndicesMergedSaved;
+  std::vector<std::vector<std::vector<std::pair<int, int> > > > vvMergedIndicesSaved;
 
   TruthTableCareReduceRebuild(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCareReduce(onsets, nInputs, pBPats, nBPats, rarity) {}
 
@@ -991,23 +991,23 @@ public:
     if(vvChildrenSaved.size() < i + 1) {
       vvChildrenSaved.resize(i + 1);
       vmRedundantIndicesSaved.resize(i + 1);
-      vvIndicesMergedSaved.resize(i + 1);
+      vvMergedIndicesSaved.resize(i + 1);
     }
     vvChildrenSaved[i] = vvChildren;
     vmRedundantIndicesSaved[i] = vmRedundantIndices;
-    vvIndicesMergedSaved[i] = vvIndicesMerged;
+    vvMergedIndicesSaved[i] = vvMergedIndices;
   }
 
   void LoadIndices(uint i) override {
     TruthTable::LoadIndices(i);
     vvChildren = vvChildrenSaved[i];
     vmRedundantIndices = vmRedundantIndicesSaved[i];
-    vvIndicesMerged = vvIndicesMergedSaved[i];
+    vvMergedIndices = vvMergedIndicesSaved[i];
   }
 
   void BDDBuildStartup() override {
-    vvIndicesMerged.clear();
-    vvIndicesMerged.resize(nInputs);
+    vvMergedIndices.clear();
+    vvMergedIndices.resize(nInputs);
     TruthTableCareReduce::BDDBuildStartup();
   }
 
@@ -1020,7 +1020,7 @@ public:
         vvChildren[i-1].clear();
       }
       vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
+      vvMergedIndices[i].clear();
     }
     for(int i = 0; i < nInputs; i++) {
       vmRedundantIndices[i].clear();
@@ -1071,7 +1071,7 @@ public:
   int BDDBuildOneNoCare(int index, int lev) {
     int r = BDDFind(index, lev);
     if(r >= -2) {
-      vvIndicesMerged[lev].push_back({r, index});
+      vvMergedIndices[lev].push_back({r, index});
       return r;
     }
     vvIndices[lev].push_back(index);
@@ -1099,7 +1099,7 @@ public:
   }
 
   void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvIndicesMerged[lev]) {
+    for(auto &p: vvMergedIndices[lev]) {
       MergeCare(p.first >> 1, p.second, lev);
     }
   }
@@ -1108,8 +1108,8 @@ public:
     RestoreCare();
     vvIndices[lev].clear();
     vvIndices[lev+1].clear();
-    vvIndicesMerged[lev].clear();
-    vvIndicesMerged[lev+1].clear();
+    vvMergedIndices[lev].clear();
+    vvMergedIndices[lev+1].clear();
     if(lev) {
       vvChildren[lev-1].clear();
     }
@@ -1132,7 +1132,7 @@ public:
       }
     }
     if(lev < nInputs - 2) {
-      vvIndicesMerged[lev+2].clear();
+      vvMergedIndices[lev+2].clear();
       vvChildren[lev+1].clear();
       BDDBuildLevelNoCare(lev + 2);
     }
@@ -1145,7 +1145,7 @@ public:
       for(int &index: vvChildren[i]) {
         SwapIndex(index, i - (lev + 2) + 2);
       }
-      for(auto &p: vvIndicesMerged[i]) {
+      for(auto &p: vvMergedIndices[i]) {
         if(p.first >= 0) {
           SwapIndex(p.first, i - (lev + 2) + 1);
         }
@@ -1174,10 +1174,10 @@ public:
         int cof0index = index << 1;
         int cof1index = cof0index ^ 1;
         if(IsDC(cof0index, i)) {
-          vvIndicesMerged[i].push_back({cof1index << 1, cof0index});
+          vvMergedIndices[i].push_back({cof1index << 1, cof0index});
           BDDBuildOne(cof1index, i);
         } else if(IsDC(cof1index, i)) {
-          vvIndicesMerged[i].push_back({cof0index << 1, cof1index});
+          vvMergedIndices[i].push_back({cof0index << 1, cof1index});
           BDDBuildOne(cof0index, i);
         } else {
           BDDBuildOne(cof0index, i);
@@ -1218,7 +1218,7 @@ public:
   }
 
   void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvIndicesMerged[lev]) {
+    for(auto &p: vvMergedIndices[lev]) {
       MergeCare(p.first >> 1, p.second, lev);
     }
   }
@@ -1278,7 +1278,7 @@ public:
   }
 
   void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvIndicesMerged[lev]) {
+    for(auto &p: vvMergedIndices[lev]) {
       if(p.first >= 0) {
         CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
       }
@@ -1383,7 +1383,7 @@ public:
   }
 
   void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvIndicesMerged[lev]) {
+    for(auto &p: vvMergedIndices[lev]) {
       if(p.first >= 0) {
         CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
       }
@@ -1455,26 +1455,26 @@ public:
 
 class TruthTableCareRebuild : public TruthTableCare {
 public:
-  std::vector<std::vector<std::vector<std::pair<int, int> > > > vvIndicesMergedSaved;
+  std::vector<std::vector<std::vector<std::pair<int, int> > > > vvMergedIndicesSaved;
 
   TruthTableCareRebuild(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
   void SaveIndices(uint i) override {
     TruthTable::SaveIndices(i);
-    if(vvIndicesMergedSaved.size() < i + 1) {
-      vvIndicesMergedSaved.resize(i + 1);
+    if(vvMergedIndicesSaved.size() < i + 1) {
+      vvMergedIndicesSaved.resize(i + 1);
     }
-    vvIndicesMergedSaved[i] = vvIndicesMerged;
+    vvMergedIndicesSaved[i] = vvMergedIndices;
   }
 
   void LoadIndices(uint i) override {
     TruthTable::LoadIndices(i);
-    vvIndicesMerged = vvIndicesMergedSaved[i];
+    vvMergedIndices = vvMergedIndicesSaved[i];
   }
 
   void BDDBuildStartup() override {
-    vvIndicesMerged.clear();
-    vvIndicesMerged.resize(nInputs);
+    vvMergedIndices.clear();
+    vvMergedIndices.resize(nInputs);
     TruthTableCare::BDDBuildStartup();
   }
 
@@ -1487,7 +1487,7 @@ public:
         vvRedundantIndices[i-1].clear();
       }
       vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
+      vvMergedIndices[i].clear();
     }
     for(int i = 0; i < lev; i++) {
       BDDRebuildByMerge(i);
@@ -1584,7 +1584,7 @@ public:
   }
 
   void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvIndicesMerged[lev]) {
+    for(auto &p: vvMergedIndices[lev]) {
       if(p.first >= 0) {
         CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
       }
