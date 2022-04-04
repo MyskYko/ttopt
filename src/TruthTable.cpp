@@ -173,10 +173,23 @@ public:
     return 2 * fCompl + fEq;
   }
 
-  virtual int BDDNodeCountLevel(int lev) {
-    if(vvRedundantIndices.empty()) {
-      return vvIndices[lev].size();
+  bool Imply(int index1, int index2, int lev) {
+    assert(index1 >= 0);
+    assert(index2 >= 0);
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      for(int i = 0; i < nScopeSize; i++) {
+        if(t[nScopeSize * index1 + i] & ~t[nScopeSize * index2 + i]) {
+          return false;
+        }
+      }
+      return true;
     }
+    return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[logwidth]));
+  }
+
+  virtual int BDDNodeCountLevel(int lev) {
     return vvIndices[lev].size() - vvRedundantIndices[lev].size();
   }
 
@@ -274,47 +287,25 @@ public:
   virtual int BDDRebuild(int lev) {
     vvIndices[lev].clear();
     vvIndices[lev+1].clear();
-    vvRedundantIndices[lev].clear();
-    vvRedundantIndices[lev+1].clear();
-    if(lev == 0) {
-      for(int j = 0; j < nOutputs; j++) {
-        BDDBuildOne(j, 0);
-      }
-    } else {
-      for(int index: vvIndices[lev-1]) {
-        BDDBuildOne(index << 1, lev);
-        BDDBuildOne((index << 1) ^ 1, lev);
+    for(int i = lev; i < lev + 2; i++) {
+      if(!i) {
+        for(int j = 0; j < nOutputs; j++) {
+          BDDBuildOne(j, 0);
+        }
+      } else {
+        vvRedundantIndices[i-1].clear();
+        BDDBuildLevel(i);
       }
     }
-    for(int index: vvIndices[lev]) {
-      int cof0 = BDDBuildOne(index << 1, lev+1);
-      int cof1 = BDDBuildOne((index << 1) ^ 1, lev+1);
-      if(cof0 == cof1) {
-        vvRedundantIndices[lev].push_back(index);
-      }
-    }
-    for(int index: vvIndices[lev+1]) {
-      if(IsEq(index << 1, (index << 1) ^ 1, lev+2)) {
-        vvRedundantIndices[lev+1].push_back(index);
+    if(lev < nInputs - 2) {
+      vvRedundantIndices[lev+1].clear();
+      for(int index: vvIndices[lev+1]) {
+        if(IsEq(index << 1, (index << 1) ^ 1, lev + 2)) {
+          vvRedundantIndices[lev+1].push_back(index);
+        }
       }
     }
     return BDDNodeCount();
-  }
-
-  bool Imply(int index1, int index2, int lev) {
-    assert(index1 >= 0);
-    assert(index2 >= 0);
-    int logwidth = nInputs - lev;
-    if(logwidth > lww) {
-      int nScopeSize = 1 << (logwidth - lww);
-      for(int i = 0; i < nScopeSize; i++) {
-        if(t[nScopeSize * index1 + i] & ~t[nScopeSize * index2 + i]) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[logwidth]));
   }
 
   virtual void Swap(int lev) {
@@ -402,7 +393,7 @@ public:
       if(lev) {
         Load(!turn);
         LoadIndices(!turn);
-        for(int i = lev-1; i >= 0; i--) {
+        for(int i = lev - 1; i >= 0; i--) {
           int count = BDDSwap(i);
           if(best > count) {
             best = count;
@@ -428,7 +419,7 @@ public:
           Swap(j);
         }
       } else if(lev > i) {
-        for(int j = lev-1; j >= i; j--) {
+        for(int j = lev - 1; j >= i; j--) {
           Swap(j);
         }
       }
@@ -1613,9 +1604,9 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  // TruthTable tt(onsets, nInputs);
-  // tt.RandomSiftReo(20);
-  // tt.BDDGenerateBlif(inputs, outputs, f);
+  TruthTable tt(onsets, nInputs);
+  tt.RandomSiftReo(20);
+  tt.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
@@ -1632,10 +1623,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
