@@ -253,16 +253,20 @@ public:
     }
   }
 
+  virtual void BDDBuildLevel(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0 = BDDBuildOne(index << 1, lev);
+      int cof1 = BDDBuildOne((index << 1) ^ 1, lev);
+      if(cof0 == cof1) {
+        vvRedundantIndices[lev-1].push_back(index);
+      }
+    }
+  }
+
   virtual int BDDBuild() {
     BDDBuildStartup();
     for(int i = 1; i < nInputs; i++) {
-      for(int index: vvIndices[i-1]) {
-        int cof0 = BDDBuildOne(index << 1, i);
-        int cof1 = BDDBuildOne((index << 1) ^ 1, i);
-        if(cof0 == cof1) {
-          vvRedundantIndices[i-1].push_back(index);
-        }
-      }
+      BDDBuildLevel(i);
     }
     return BDDNodeCount();
   }
@@ -915,6 +919,17 @@ public:
     TruthTableCare::BDDBuildStartup();
   }
 
+  void BDDBuildLevel(int lev) override = 0;
+
+  int BDDBuild() override {
+    BDDBuildStartup();
+    for(int i = 1; i < nInputs; i++) {
+      BDDBuildLevel(i);
+    }
+    BDDReduce(nInputs - 2);
+    return BDDNodeCount();
+  }
+
   void BDDReduce(int lev) {
     if(lev > nInputs - 2) {
       lev = nInputs - 2;
@@ -996,13 +1011,7 @@ public:
     TruthTableCareReduce::BDDBuildStartup();
   }
 
-  virtual void BDDBuildLevel(int lev) = 0;
-
-  virtual void BDDRebuildByMerge(int lev) {
-    for(auto &p: vvIndicesMerged[lev]) {
-      MergeCare(p.first >> 1, p.second, lev);
-    }
-  }
+  virtual void BDDRebuildByMerge(int lev)  = 0;
 
   int BDDRebuild(int lev) override {
     RestoreCare();
@@ -1059,15 +1068,6 @@ public:
     }
   }
 
-  int BDDBuild() override {
-    BDDBuildStartup();
-    for(int i = 1; i < nInputs; i++) {
-      BDDBuildLevel(i);
-    }
-    BDDReduce(nInputs - 2);
-    return BDDNodeCount();
-  }
-
   int BDDBuildOneNoCare(int index, int lev) {
     int r = BDDFind(index, lev);
     if(r >= -2) {
@@ -1095,6 +1095,12 @@ public:
       }
       vvChildren[lev-1].push_back(cof0);
       vvChildren[lev-1].push_back(cof1);
+    }
+  }
+
+  void BDDRebuildByMerge(int lev) override {
+    for(auto &p: vvIndicesMerged[lev]) {
+      MergeCare(p.first >> 1, p.second, lev);
     }
   }
 
@@ -1211,13 +1217,10 @@ public:
     }
   }
 
-  int BDDBuild() override {
-    BDDBuildStartup();
-    for(int i = 1; i < nInputs; i++) {
-      BDDBuildLevel(i);
+  void BDDRebuildByMerge(int lev) override {
+    for(auto &p: vvIndicesMerged[lev]) {
+      MergeCare(p.first >> 1, p.second, lev);
     }
-    BDDReduce(nInputs - 2);
-    return BDDNodeCount();
   }
 
   void Optimize() override {
@@ -1269,13 +1272,9 @@ public:
 
   int BDDBuild() override {
     TruthTable::Save(3);
-    BDDBuildStartup();
-    for(int i = 1; i < nInputs; i++) {
-      BDDBuildLevel(i);
-    }
-    BDDReduce(nInputs - 2);
+    int r = TruthTableCareReduce::BDDBuild();
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   void BDDRebuildByMerge(int lev) override {
@@ -1378,13 +1377,9 @@ public:
 
   int BDDBuild() override {
     TruthTable::Save(3);
-    BDDBuildStartup();
-    for(int i = 1; i < nInputs; i++) {
-      BDDBuildLevel(i);
-    }
-    BDDReduce(nInputs - 2);
+    int r = TruthTableCareReduce::BDDBuild();
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   void BDDRebuildByMerge(int lev) override {
@@ -1483,24 +1478,7 @@ public:
     TruthTableCare::BDDBuildStartup();
   }
 
-  void BDDBuildLevel(int lev) {
-    for(int index: vvIndices[lev-1]) {
-      int cof0 = BDDBuildOne(index << 1, lev);
-      int cof1 = BDDBuildOne((index << 1) ^ 1, lev);
-      if(cof0 == cof1) {
-        vvRedundantIndices[lev-1].push_back(index);
-      }
-    }
-  }
-
-  void BDDRebuildByMerge(int lev) {
-    for(auto &p: vvIndicesMerged[lev]) {
-      if(p.first >= 0) {
-        CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
-      }
-      MergeCare(p.first >> 1, p.second, lev);
-    }
-  }
+  virtual void BDDRebuildByMerge(int lev) = 0;
 
   int BDDRebuild(int lev) override {
     RestoreCare();
@@ -1603,6 +1581,15 @@ public:
     int r = TruthTable::BDDBuild();
     TruthTable::Load(3);
     return r;
+  }
+
+  void BDDRebuildByMerge(int lev) override {
+    for(auto &p: vvIndicesMerged[lev]) {
+      if(p.first >= 0) {
+        CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
+      }
+      MergeCare(p.first >> 1, p.second, lev);
+    }
   }
 
   int BDDRebuild(int lev) override {
