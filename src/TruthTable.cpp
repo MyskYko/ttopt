@@ -864,6 +864,8 @@ public:
     RestoreCare();
     vvIndices.clear();
     vvIndices.resize(nInputs);
+    vvRedundantIndices.clear();
+    vvRedundantIndices.resize(nInputs);
     for(int i = 0; i < nOutputs; i++) {
       if(!IsDC(i, 0)) {
         BDDBuildOne(i, 0);
@@ -1456,11 +1458,11 @@ public:
   }
 };
 
-class TruthTableLevelTSM : public TruthTableCare {
+class TruthTableCareRebuild : public TruthTableCare {
 public:
   std::vector<std::vector<std::vector<std::pair<int, int> > > > vvIndicesMergedSaved;
 
-  TruthTableLevelTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
+  TruthTableCareRebuild(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCare(onsets, nInputs, pBPats, nBPats, rarity) {}
 
   void SaveIndices(uint i) override {
     TruthTable::SaveIndices(i);
@@ -1474,6 +1476,62 @@ public:
     TruthTable::LoadIndices(i);
     vvIndicesMerged = vvIndicesMergedSaved[i];
   }
+
+  void BDDBuildStartup() override {
+    vvIndicesMerged.clear();
+    vvIndicesMerged.resize(nInputs);
+    TruthTableCare::BDDBuildStartup();
+  }
+
+  void BDDBuildLevel(int lev) {
+    for(int index: vvIndices[lev-1]) {
+      int cof0 = BDDBuildOne(index << 1, lev);
+      int cof1 = BDDBuildOne((index << 1) ^ 1, lev);
+      if(cof0 == cof1) {
+        vvRedundantIndices[lev-1].push_back(index);
+      }
+    }
+  }
+
+  void BDDRebuildByMerge(int lev) {
+    for(auto &p: vvIndicesMerged[lev]) {
+      if(p.first >= 0) {
+        CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
+      }
+      MergeCare(p.first >> 1, p.second, lev);
+    }
+  }
+
+  int BDDRebuild(int lev) override {
+    RestoreCare();
+    for(int i = lev; i < nInputs; i++) {
+      if(i) {
+        vvRedundantIndices[i-1].clear();
+      }
+      vvIndices[i].clear();
+      vvIndicesMerged[i].clear();
+    }
+    for(int i = 0; i < lev; i++) {
+      BDDRebuildByMerge(i);
+    }
+    for(int i = lev; i < nInputs; i++) {
+      if(!i) {
+        for(int j = 0; j < nOutputs; j++) {
+          if(!IsDC(j, 0)) {
+            BDDBuildOne(j, 0);
+          }
+        }
+      } else {
+        BDDBuildLevel(i);
+      }
+    }
+    return BDDNodeCount();
+  }
+};
+
+class TruthTableLevelTSM : public TruthTableCareRebuild {
+public:
+  TruthTableLevelTSM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCareRebuild(onsets, nInputs, pBPats, nBPats, rarity) {}
 
   int BDDFindTSM(int index, int lev) {
     int logwidth = nInputs - lev;
@@ -1540,58 +1598,18 @@ public:
     return index << 1;
   }
 
-  void BDDBuildStartup() override {
-    vvRedundantIndices.clear();
-    vvRedundantIndices.resize(nInputs);
-    vvIndicesMerged.clear();
-    vvIndicesMerged.resize(nInputs);
-    TruthTableCare::BDDBuildStartup();
-  }
-
   int BDDBuild() override {
     TruthTable::Save(3);
-    TruthTable::BDDBuild();
+    int r = TruthTable::BDDBuild();
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   int BDDRebuild(int lev) override {
     TruthTable::Save(3);
-    RestoreCare();
-    for(int i = lev; i < nInputs; i++) {
-      if(i) {
-        vvRedundantIndices[i-1].clear();
-      }
-      vvIndices[i].clear();
-      vvIndicesMerged[i].clear();
-    }
-    for(int i = 0; i < lev; i++) {
-      for(auto &p: vvIndicesMerged[i]) {
-        if(p.first >= 0) {
-          CopyFuncMasked(p.first >> 1, p.second, i, p.first & 1);
-        }
-        MergeCare(p.first >> 1, p.second, i);
-      }
-    }
-    for(int i = lev; i < nInputs; i++) {
-      if(!i) {
-        for(int j = 0; j < nOutputs; j++) {
-          if(!IsDC(j, 0)) {
-            BDDBuildOne(j, 0);
-          }
-        }
-      } else {
-        for(int index: vvIndices[i-1]) {
-          int cof0 = BDDBuildOne(index << 1, i);
-          int cof1 = BDDBuildOne((index << 1) ^ 1, i);
-          if(cof0 == cof1) {
-            vvRedundantIndices[i-1].push_back(index);
-          }
-        }
-      }
-    }
+    int r = TruthTableCareRebuild::BDDRebuild(lev);
     TruthTable::Load(3);
-    return BDDNodeCount();
+    return r;
   }
 
   void Optimize() override {
