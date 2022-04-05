@@ -360,27 +360,13 @@ public:
     int best = BDDBuild();
     Save(0);
     SaveIndices(0);
-    std::list<int> vars(nInputs);
+    std::vector<int> vars(nInputs);
     std::iota(vars.begin(), vars.end(), 0);
+    std::sort(vars.begin(), vars.end(), [&](int i1, int i2) {return BDDNodeCountLevel(vLevels[i1]) > BDDNodeCountLevel(vLevels[i2]);});
     bool turn = true;
-    while(!vars.empty()) {
+    for(int var: vars) {
       bool updated = false;
-      int maxvar = -1;
-      int maxnodes = 0;
-      std::list<int>::iterator maxit;
-      for(auto it = vars.begin(); it != vars.end(); it++) {
-        if(BDDNodeCountLevel(vLevels[maxvar]) > maxnodes) {
-          maxnodes = BDDNodeCountLevel(vLevels[maxvar]);
-          maxvar = *it;
-          maxit = it;
-        }
-      }
-      LoadIndices(!turn); // conv
-      if(maxvar == -1) {
-        break;
-      }
-      vars.erase(maxit);
-      int lev = vLevels[maxvar];
+      int lev = vLevels[var];
       for(int i = lev; i < nInputs - 1; i++) {
         int count = BDDSwap(i);
         if(best > count) {
@@ -405,7 +391,7 @@ public:
       }
       turn ^= updated;
       Load(!turn);
-      // LoadIndices(!turn); // conv
+      LoadIndices(!turn);
     }
     return best;
   }
