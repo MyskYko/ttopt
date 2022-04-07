@@ -16,6 +16,8 @@ extern void ReadPla(std::string filename, std::vector<std::vector<std::string> >
 
 extern void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &vpBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f);
 
+extern void BddTest(std::vector<std::vector<int> > const &onsets, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f);
+
 void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &vpBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   std::string planame = "test.pla";
   GeneratePla(planame, onsets, vpBPats, nBPats, rarity);
@@ -91,7 +93,8 @@ int main(int argc, char **argv) {
       }
     }
 
-    TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+    BddTest(onsets, LUTInputs, LUTOutputs, of);
+    //TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
     //RunEspresso(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
   }
 

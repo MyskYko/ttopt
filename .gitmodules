@@ -1,0 +1,3 @@
+[submodule "cudd"]
+	path = cudd
+	url = https://github.com/MyskYko/cudd-1.git
