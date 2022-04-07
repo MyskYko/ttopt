@@ -51,10 +51,16 @@ def convlayer(layername):
                 blif.write('.names ')
                 blif.write(' '.join(inputs))
                 blif.write(f' M1[{curoutnum}]\n')
+                patnum = 0
                 for pat in pats:
                     if pat[1][ttoutnum-j-1] == '1':
                         blif.write(pat[0])
                         blif.write(' 1\n')
+                        patnum += 1
+                if not patnum:
+                    for k in range(len(inputs)):
+                        blif.write('-')
+                    blif.write(' 0\n')
                 curoutnum += 1
             ttid += 1
     blif.write('.end')
