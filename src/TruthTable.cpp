@@ -776,14 +776,20 @@ public:
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
       for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
-        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
         word cvalue = caret[nScopeSize * index2 + i];
+        if(~caret[nScopeSize * index1 + i] & cvalue) {
+          return 0;
+        }
+        word value = t[nScopeSize * index1 + i] ^ t[nScopeSize * index2 + i];
         fEq &= !(value & cvalue);
         fCompl &= !(~value & cvalue);
       }
     } else {
-      word value = GetValue(index1, lev) ^ GetValue(index2, lev);
       word cvalue = GetCare(index2, lev);
+      if((GetCare(index1, lev) ^ ones[logwidth]) & cvalue) {
+        return 0;
+      }
+      word value = GetValue(index1, lev) ^ GetValue(index2, lev);
       fEq &= !(value & cvalue);
       fCompl &= !((value ^ ones[logwidth]) & cvalue);
     }
@@ -1199,11 +1205,9 @@ public:
       int cof1index = cof0index ^ 1;
       int cof0, cof1;
       if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
-        Merge(cof0index, cof1index, lev, !(r & 1));
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
-        Merge(cof1index, cof0index, lev, !(r & 1));
         cof1 = BDDBuildOne(cof1index, lev);
         cof0 = cof1 ^ !(r & 1);
       } else {
@@ -1228,10 +1232,10 @@ public:
         int cof0index = index << 1;
         int cof1index = cof0index ^ 1;
         if(int r = Include(cof0index, cof1index, i, fComplOSM)) {
-          Merge(cof0index, cof1index, i, !(r & 1));
+          vvMergedIndices[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
           BDDBuildOne(cof0index, i);
         } else if(int r = Include(cof1index, cof0index, i, fComplOSM)) {
-          Merge(cof1index, cof0index, i, !(r & 1));
+          vvMergedIndices[i].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
           BDDBuildOne(cof1index, i);
         } else {
           BDDBuildOne(cof0index, i);
@@ -1323,11 +1327,9 @@ public:
       int cof1index = cof0index ^ 1;
       int cof0, cof1;
       if(int r = Include(cof0index, cof1index, lev, fComplOSM)) {
-        Merge(cof0index, cof1index, lev, !(r & 1));
         cof0 = BDDBuildOne(cof0index, lev);
         cof1 = cof0 ^ !(r & 1);
       } else if(int r = Include(cof1index, cof0index, lev, fComplOSM)) {
-        Merge(cof1index, cof0index, lev, !(r & 1));
         cof1 = BDDBuildOne(cof1index, lev);
         cof0 = cof1 ^ !(r & 1);
       } else {
@@ -1405,11 +1407,11 @@ public:
         int cof1index = cof0index ^ 1;
         int cof0, cof1;
         if(int r = Include(cof0index, cof1index, i, fComplOSM)) {
-          Merge(cof0index, cof1index, i, !(r & 1));
+          vvMergedIndices[i].push_back({(cof0index << 1) ^ !(r & 1), cof1index});
           cof0 = BDDBuildOne(cof0index, i);
           cof1 = cof0 ^ !(r & 1);
         } else if(int r = Include(cof1index, cof0index, i, fComplOSM)) {
-          Merge(cof1index, cof0index, i, !(r & 1));
+          vvMergedIndices[i].push_back({(cof1index << 1) ^ !(r & 1), cof0index});
           cof1 = BDDBuildOne(cof1index, i);
           cof0 = cof1 ^ !(r & 1);
         } else {
