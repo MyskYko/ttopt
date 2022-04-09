@@ -491,8 +491,8 @@ const TruthTable::word TruthTable::swapmask[] = {0x2222222222222222ull,
 class TruthTableReo : public TruthTable {
 public:
   bool fBuilt = false;
-  std::vector<std::map<int, std::pair<int, int> > > vmChildren; // should use a different way O(1)
-  std::vector<std::vector<std::map<int, std::pair<int, int> > > > vmChildrenSaved;
+  std::vector<std::vector<int> > vmChildren;
+  std::vector<std::vector<std::vector<int> > > vmChildrenSaved;
 
   TruthTableReo(std::vector<std::vector<int> > const &onsets, int nInputs): TruthTable(onsets, nInputs) {}
 
@@ -521,6 +521,63 @@ public:
     vmChildren = vmChildrenSaved[i];
   }
 
+  int BDDFind2(int index, int lev) {
+    int logwidth = nInputs - lev;
+    if(logwidth > lww) {
+      int nScopeSize = 1 << (logwidth - lww);
+      bool fZero = true;
+      bool fOne = true;
+      for(int i = 0; i < nScopeSize && (fZero || fOne); i++) {
+        word value = t[nScopeSize * index + i];
+        fZero &= !value;
+        fOne &= !(~value);
+      }
+      if(fZero || fOne) {
+        return -2 ^ fOne;
+      }
+      for(uint j = 0; j < vvIndices[lev].size(); j++) {
+        int index2 = vvIndices[lev][j];
+        bool fEq = true;
+        bool fCompl = true;
+        for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
+          fEq &= t[nScopeSize * index + i] == t[nScopeSize * index2 + i];
+          fCompl &= t[nScopeSize * index + i] == ~t[nScopeSize * index2 + i];
+        }
+        if(fEq || fCompl) {
+          return (j << 1) ^ fCompl;
+        }
+      }
+    } else {
+      word value = GetValue(index, lev);
+      if(!value) {
+        return -2;
+      }
+      if(!(value ^ ones[logwidth])) {
+        return -1;
+      }
+      for(uint j = 0; j < vvIndices[lev].size(); j++) {
+        int index2 = vvIndices[lev][j];
+        word value2 = value ^ GetValue(index2, lev);
+        if(!(value2)) {
+          return j << 1;
+        }
+        if(!(value2 ^ ones[logwidth])) {
+          return (j << 1) ^ 1;
+        }
+      }
+    }
+    return -3;
+  }
+
+  int BDDBuildOne(int index, int lev) override {
+    int r = BDDFind2(index, lev);
+    if(r >= -2) {
+      return r;
+    }
+    vvIndices[lev].push_back(index);
+    return (vvIndices[lev].size() - 1) << 1;
+  }
+
   void BDDBuildStartup() override {
     vmChildren.clear();
     vmChildren.resize(nInputs);
@@ -531,7 +588,8 @@ public:
     for(int index: vvIndices[lev-1]) {
       int cof0 = BDDBuildOne(index << 1, lev);
       int cof1 = BDDBuildOne((index << 1) ^ 1, lev);
-      vmChildren[lev-1][index] = {cof0, cof1};
+      vmChildren[lev-1].push_back(cof0);
+      vmChildren[lev-1].push_back(cof1);
       if(cof0 == cof1) {
         vvRedundantIndices[lev-1].push_back(index);
       }
@@ -550,7 +608,7 @@ public:
     return BDDNodeCount();
   }
 
-  int BDDRebuildOne(int index, int cof0, int cof1, int lev, std::unordered_map<std::pair<int, int>, int> &unique, std::map<int, std::pair<int, int> > &mChildrenLow) {
+  int BDDRebuildOne(int index, int cof0, int cof1, int lev, std::unordered_map<std::pair<int, int>, int> &unique, std::vector<int> &mChildrenLow) {
     if(cof0 < 0 && cof0 == cof1) {
       return cof0;
     }
@@ -562,47 +620,50 @@ public:
     if(unique.count({cof0, cof1})) {
       return (unique[{cof0, cof1}] << 1) ^ fCompl;
     }
-    unique[{cof0, cof1}] = index;
     vvIndices[lev].push_back(index);
-    mChildrenLow[index] = {cof0, cof1};
+    unique[{cof0, cof1}] = vvIndices[lev].size() - 1;
+    mChildrenLow.push_back(cof0);
+    mChildrenLow.push_back(cof1);
     if(cof0 == cof1) {
       vvRedundantIndices[lev].push_back(index);
     }
-    return (index << 1) ^ fCompl;
+    return ((vvIndices[lev].size() - 1) << 1) ^ fCompl;
   }
 
   int BDDRebuild(int lev) override {
     vvRedundantIndices[lev].clear();
     vvRedundantIndices[lev+1].clear();
-    std::map<int, std::pair<int, int> > mChildrenHigh;
-    std::map<int, std::pair<int, int> > mChildrenLow;
+    std::vector<int> mChildrenHigh;
+    std::vector<int> mChildrenLow;
     std::unordered_map<std::pair<int, int>, int> unique;
     unique.reserve(2 * vvIndices[lev+1].size());
     vvIndices[lev+1].clear();
-    for(int index: vvIndices[lev]) {
-      int cof0index = vmChildren[lev][index].first >> 1;
-      int cof1index = vmChildren[lev][index].second >> 1;
-      bool cof0c = vmChildren[lev][index].first & 1;
-      bool cof1c = vmChildren[lev][index].second & 1;
+    for(uint i = 0; i < vvIndices[lev].size(); i++) {
+      int index = vvIndices[lev][i];
+      int cof0index = vmChildren[lev][i+i] >> 1;
+      int cof1index = vmChildren[lev][i+i+1] >> 1;
+      bool cof0c = vmChildren[lev][i+i] & 1;
+      bool cof1c = vmChildren[lev][i+i+1] & 1;
       //bool fCompl = cof0c ^ cof1c;
       int cof00, cof01, cof10, cof11;
       if(cof0index < 0) {
         cof00 = -2 ^ cof0c;
         cof01 = -2 ^ cof0c;
       } else {
-        cof00 = vmChildren[lev+1][cof0index].first ^ cof0c;
-        cof01 = vmChildren[lev+1][cof0index].second ^ cof0c;
+        cof00 = vmChildren[lev+1][cof0index+cof0index] ^ cof0c;
+        cof01 = vmChildren[lev+1][cof0index+cof0index+1] ^ cof0c;
       }
       if(cof1index < 0) {
         cof10 = -2 ^ cof1c;
         cof11 = -2 ^ cof1c;
       } else {
-        cof10 = vmChildren[lev+1][cof1index].first ^ cof1c;
-        cof11 = vmChildren[lev+1][cof1index].second ^ cof1c;
+        cof10 = vmChildren[lev+1][cof1index+cof1index] ^ cof1c;
+        cof11 = vmChildren[lev+1][cof1index+cof1index+1] ^ cof1c;
       }
       int newcof0 = BDDRebuildOne(index << 1, cof00, cof10, lev + 1, unique, mChildrenLow);
       int newcof1 = BDDRebuildOne((index << 1) ^ 1, cof01, cof11, lev + 1, unique, mChildrenLow);
-      mChildrenHigh[index] = {newcof0, newcof1};
+      mChildrenHigh.push_back(newcof0);
+      mChildrenHigh.push_back(newcof1);
       if(newcof0 == newcof1) {
         vvRedundantIndices[lev].push_back(index);
       }
