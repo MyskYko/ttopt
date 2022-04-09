@@ -488,6 +488,144 @@ const TruthTable::word TruthTable::swapmask[] = {0x2222222222222222ull,
                                                  0x0000ff000000ff00ull,
                                                  0x00000000ffff0000ull};
 
+class TruthTableReo : public TruthTable {
+public:
+  bool fBuilt = false;
+  std::vector<std::map<int, std::pair<int, int> > > vmChildren; // should use a different way O(1)
+  std::vector<std::vector<std::map<int, std::pair<int, int> > > > vmChildrenSaved;
+
+  TruthTableReo(std::vector<std::vector<int> > const &onsets, int nInputs): TruthTable(onsets, nInputs) {}
+
+  void Save(uint i) override {
+    if(vLevelsSaved.size() < i + 1) {
+      vLevelsSaved.resize(i + 1);
+    }
+    vLevelsSaved[i] = vLevels;
+  }
+
+  void Load(uint i) override {
+    assert(i < vLevelsSaved.size());
+    vLevels = vLevelsSaved[i];
+  }
+
+  void SaveIndices(uint i) override {
+    TruthTable::SaveIndices(i);
+    if(vmChildrenSaved.size() < i + 1) {
+      vmChildrenSaved.resize(i + 1);
+    }
+    vmChildrenSaved[i] = vmChildren;
+  }
+
+  void LoadIndices(uint i) override {
+    TruthTable::LoadIndices(i);
+    vmChildren = vmChildrenSaved[i];
+  }
+
+  void BDDBuildStartup() override {
+    vmChildren.clear();
+    vmChildren.resize(nInputs);
+    TruthTable::BDDBuildStartup();
+  }
+
+  void BDDBuildLevel(int lev) override {
+    for(int index: vvIndices[lev-1]) {
+      int cof0 = BDDBuildOne(index << 1, lev);
+      int cof1 = BDDBuildOne((index << 1) ^ 1, lev);
+      vmChildren[lev-1][index] = {cof0, cof1};
+      if(cof0 == cof1) {
+        vvRedundantIndices[lev-1].push_back(index);
+      }
+    }
+  }
+
+  int BDDBuild() override {
+    if(fBuilt) {
+      return BDDNodeCount();
+    }
+    fBuilt = true;
+    BDDBuildStartup();
+    for(int i = 1; i < nInputs + 1; i++) {
+      BDDBuildLevel(i);
+    }
+    return BDDNodeCount();
+  }
+
+  int BDDRebuildOne(int index, int cof0, int cof1, int lev, std::unordered_map<std::pair<int, int>, int> &unique, std::map<int, std::pair<int, int> > &mChildrenLow) {
+    if(cof0 < 0 && cof0 == cof1) {
+      return cof0;
+    }
+    bool fCompl = cof0 & 1;
+    if(fCompl) {
+      cof0 ^= 1;
+      cof1 ^= 1;
+    }
+    if(unique.count({cof0, cof1})) {
+      return (unique[{cof0, cof1}] << 1) ^ fCompl;
+    }
+    unique[{cof0, cof1}] = index;
+    vvIndices[lev].push_back(index);
+    mChildrenLow[index] = {cof0, cof1};
+    if(cof0 == cof1) {
+      vvRedundantIndices[lev].push_back(index);
+    }
+    return (index << 1) ^ fCompl;
+  }
+
+  int BDDRebuild(int lev) override {
+    vvRedundantIndices[lev].clear();
+    vvRedundantIndices[lev+1].clear();
+    std::map<int, std::pair<int, int> > mChildrenHigh;
+    std::map<int, std::pair<int, int> > mChildrenLow;
+    std::unordered_map<std::pair<int, int>, int> unique;
+    unique.reserve(2 * vvIndices[lev+1].size());
+    vvIndices[lev+1].clear();
+    for(int index: vvIndices[lev]) {
+      int cof0index = vmChildren[lev][index].first >> 1;
+      int cof1index = vmChildren[lev][index].second >> 1;
+      bool cof0c = vmChildren[lev][index].first & 1;
+      bool cof1c = vmChildren[lev][index].second & 1;
+      //bool fCompl = cof0c ^ cof1c;
+      int cof00, cof01, cof10, cof11;
+      if(cof0index < 0) {
+        cof00 = -2 ^ cof0c;
+        cof01 = -2 ^ cof0c;
+      } else {
+        cof00 = vmChildren[lev+1][cof0index].first ^ cof0c;
+        cof01 = vmChildren[lev+1][cof0index].second ^ cof0c;
+      }
+      if(cof1index < 0) {
+        cof10 = -2 ^ cof1c;
+        cof11 = -2 ^ cof1c;
+      } else {
+        cof10 = vmChildren[lev+1][cof1index].first ^ cof1c;
+        cof11 = vmChildren[lev+1][cof1index].second ^ cof1c;
+      }
+      int newcof0 = BDDRebuildOne(index << 1, cof00, cof10, lev + 1, unique, mChildrenLow);
+      int newcof1 = BDDRebuildOne((index << 1) ^ 1, cof01, cof11, lev + 1, unique, mChildrenLow);
+      mChildrenHigh[index] = {newcof0, newcof1};
+      if(newcof0 == newcof1) {
+        vvRedundantIndices[lev].push_back(index);
+      }
+    }
+    vmChildren[lev] = mChildrenHigh;
+    vmChildren[lev+1] = mChildrenLow;
+    return BDDNodeCount();
+  }
+
+  void Swap(int lev) override {
+    assert(lev < nInputs - 1);
+    auto it0 = std::find(vLevels.begin(), vLevels.end(), lev);
+    auto it1 = std::find(vLevels.begin(), vLevels.end(), lev + 1);
+    std::swap(*it0, *it1);
+    BDDRebuild(lev);
+  }
+
+  int BDDSwap(int lev) override {
+    Swap(lev);
+    return BDDNodeCount();
+  }
+};
+
 class TruthTableRewrite : public TruthTable {
 public:
   TruthTableRewrite(std::vector<std::vector<int> > const &onsets, int nInputs): TruthTable(onsets, nInputs) {}
@@ -1563,6 +1701,12 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
+  TruthTableReo tt(onsets, nInputs);
+  tt.RandomSiftReo(20);
+  TruthTable tt2(onsets, nInputs);
+  tt2.Reo(tt.vLevels);
+  tt2.BDDGenerateBlif(inputs, outputs, f);
+
   // std::vector<int> vLevels;
   // {
   //   TruthTable tt(onsets, nInputs);
@@ -1578,10 +1722,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
