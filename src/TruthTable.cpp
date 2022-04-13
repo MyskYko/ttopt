@@ -215,7 +215,8 @@ public:
       if(fZero || fOne) {
         return -2 ^ fOne;
       }
-      for(int index2: vvIndices[lev]) {
+      for(uint j = 0; j < vvIndices[lev].size(); j++) {
+        int index2 = vvIndices[lev][j];
         bool fEq = true;
         bool fCompl = true;
         for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
@@ -223,7 +224,7 @@ public:
           fCompl &= t[nScopeSize * index + i] == ~t[nScopeSize * index2 + i];
         }
         if(fEq || fCompl) {
-          return (index2 << 1) ^ fCompl;
+          return (j << 1) ^ fCompl;
         }
       }
     } else {
@@ -234,13 +235,14 @@ public:
       if(!(value ^ ones[logwidth])) {
         return -1;
       }
-      for(int index2: vvIndices[lev]) {
+      for(uint j = 0; j < vvIndices[lev].size(); j++) {
+        int index2 = vvIndices[lev][j];
         word value2 = value ^ GetValue(index2, lev);
         if(!(value2)) {
-          return index2 << 1;
+          return j << 1;
         }
         if(!(value2 ^ ones[logwidth])) {
-          return (index2 << 1) ^ 1;
+          return (j << 1) ^ 1;
         }
       }
     }
@@ -253,7 +255,7 @@ public:
       return r;
     }
     vvIndices[lev].push_back(index);
-    return index << 1;
+    return (vvIndices[lev].size() - 1) << 1;
   }
 
   virtual void BDDBuildStartup() {
@@ -434,9 +436,7 @@ public:
   int BDDGenerateBlifRec(std::vector<std::vector<int> > &vvNodes, int &nNodes, int index, int lev, std::ofstream &f, std::string const &prefix) {
     int r = BDDFind(index, lev);
     if(r >= 0) {
-      auto it = std::lower_bound(vvIndices[lev].begin(), vvIndices[lev].end(), r >> 1);
-      int i = it - vvIndices[lev].begin();
-      return (vvNodes[lev][i] << 1) ^ (r & 1);
+      return (vvNodes[lev][r >> 1] << 1) ^ (r & 1);
     }
     if(r >= -2) {
       return r + 2;
@@ -519,63 +519,6 @@ public:
   void LoadIndices(uint i) override {
     TruthTable::LoadIndices(i);
     vvChildren = vvChildrenSaved[i];
-  }
-
-  int BDDFind2(int index, int lev) {
-    int logwidth = nInputs - lev;
-    if(logwidth > lww) {
-      int nScopeSize = 1 << (logwidth - lww);
-      bool fZero = true;
-      bool fOne = true;
-      for(int i = 0; i < nScopeSize && (fZero || fOne); i++) {
-        word value = t[nScopeSize * index + i];
-        fZero &= !value;
-        fOne &= !(~value);
-      }
-      if(fZero || fOne) {
-        return -2 ^ fOne;
-      }
-      for(uint j = 0; j < vvIndices[lev].size(); j++) {
-        int index2 = vvIndices[lev][j];
-        bool fEq = true;
-        bool fCompl = true;
-        for(int i = 0; i < nScopeSize && (fEq || fCompl); i++) {
-          fEq &= t[nScopeSize * index + i] == t[nScopeSize * index2 + i];
-          fCompl &= t[nScopeSize * index + i] == ~t[nScopeSize * index2 + i];
-        }
-        if(fEq || fCompl) {
-          return (j << 1) ^ fCompl;
-        }
-      }
-    } else {
-      word value = GetValue(index, lev);
-      if(!value) {
-        return -2;
-      }
-      if(!(value ^ ones[logwidth])) {
-        return -1;
-      }
-      for(uint j = 0; j < vvIndices[lev].size(); j++) {
-        int index2 = vvIndices[lev][j];
-        word value2 = value ^ GetValue(index2, lev);
-        if(!(value2)) {
-          return j << 1;
-        }
-        if(!(value2 ^ ones[logwidth])) {
-          return (j << 1) ^ 1;
-        }
-      }
-    }
-    return -3;
-  }
-
-  int BDDBuildOne(int index, int lev) override {
-    int r = BDDFind2(index, lev);
-    if(r >= -2) {
-      return r;
-    }
-    vvIndices[lev].push_back(index);
-    return (vvIndices[lev].size() - 1) << 1;
   }
 
   void BDDBuildStartup() override {
@@ -1762,11 +1705,11 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  // TruthTableReo tt(onsets, nInputs);
-  // tt.RandomSiftReo(20);
-  // TruthTable tt2(onsets, nInputs);
-  // tt2.Reo(tt.vLevels);
-  // tt2.BDDGenerateBlif(inputs, outputs, f);
+  TruthTableReo tt(onsets, nInputs);
+  tt.RandomSiftReo(20);
+  TruthTable tt2(onsets, nInputs);
+  tt2.Reo(tt.vLevels);
+  tt2.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
@@ -1783,10 +1726,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
