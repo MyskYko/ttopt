@@ -980,19 +980,21 @@ public:
 
   void Merge(int index1, int index2, int lev, bool fCompl) {
     MergeCare(index1, index2, lev);
-    if(!vvMergedIndices.empty()) {
-      vvMergedIndices[lev].push_back({(index1 << 1) ^ fCompl, index2});
-    }
+    vvMergedIndices[lev].push_back({(index1 << 1) ^ fCompl, index2});
   }
 
   int BDDBuildOne(int index, int lev) override {
     int r = BDDFind(index, lev);
+    if(r >= 0) {
+      Merge(vvIndices[lev][r >> 1], index, lev, r & 1);
+      return r;
+    }
     if(r >= -2) {
-      Merge(r >> 1, index, lev, r & 1);
+      Merge(-1, index, lev, r & 1);
       return r;
     }
     vvIndices[lev].push_back(index);
-    return index << 1;
+    return (vvIndices[lev].size() - 1) << 1;
   }
 
   void CompleteMerge() {
@@ -1018,7 +1020,11 @@ public:
     }
   }
 
-  virtual void BDDRebuildByMerge(int lev) = 0;
+  virtual void BDDRebuildByMerge(int lev) {
+    for(auto &p: vvMergedIndices[lev]) {
+      MergeCare(p.first >> 1, p.second, lev);
+    }
+  }
 
   int BDDRebuild(int lev) override {
     RestoreCare();
@@ -1065,7 +1071,16 @@ public:
     }
   }
 
-  virtual void Optimize() = 0;
+  virtual void Optimize() {
+    OptimizationStartup();
+    for(int i = 1; i < nInputs; i++) {
+      for(int index: vvIndices[i-1]) {
+        BDDBuildOne(index << 1, i);
+        BDDBuildOne((index << 1) ^ 1, i);
+      }
+    }
+    CompleteMerge();
+  }
 };
 
 class TruthTableCareReduce : public TruthTableCare {
@@ -1247,12 +1262,6 @@ public:
     }
   }
 
-  void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvMergedIndices[lev]) {
-      MergeCare(p.first >> 1, p.second, lev);
-    }
-  }
-
   int BDDRebuild(int lev) override {
     RestoreCare();
     vvIndices[lev].clear();
@@ -1358,12 +1367,6 @@ public:
       }
       vvChildren[lev-1].push_back(cof0);
       vvChildren[lev-1].push_back(cof1);
-    }
-  }
-
-  void BDDRebuildByMerge(int lev) override {
-    for(auto &p: vvMergedIndices[lev]) {
-      MergeCare(p.first >> 1, p.second, lev);
     }
   }
 
@@ -1686,17 +1689,6 @@ public:
     TruthTable::Load(3);
     return r;
   }
-
-  void Optimize() override {
-    OptimizationStartup();
-    for(int i = 1; i < nInputs; i++) {
-      for(int index: vvIndices[i-1]) {
-        BDDBuildOne(index << 1, i);
-        BDDBuildOne((index << 1) ^ 1, i);
-      }
-    }
-    CompleteMerge();
-  }
 };
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
@@ -1705,11 +1697,11 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.RandomSiftReo(20);
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
-  TruthTableReo tt(onsets, nInputs);
-  tt.RandomSiftReo(20);
-  TruthTable tt2(onsets, nInputs);
-  tt2.Reo(tt.vLevels);
-  tt2.BDDGenerateBlif(inputs, outputs, f);
+  // TruthTableReo tt(onsets, nInputs);
+  // tt.RandomSiftReo(20);
+  // TruthTable tt2(onsets, nInputs);
+  // tt2.Reo(tt.vLevels);
+  // tt2.BDDGenerateBlif(inputs, outputs, f);
 
   // std::vector<int> vLevels;
   // {
@@ -1722,14 +1714,15 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.Optimize();
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
+  TruthTableCare tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // tt.RandomSiftReo(20);
-  // tt.Optimize();
-  // tt.BDDGenerateBlif(inputs, outputs, f);
+  tt.RandomSiftReo(20);
+  tt.Optimize();
+  tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
