@@ -189,7 +189,7 @@ public:
     return !(GetValue(index1, lev) & (GetValue(index2, lev) ^ ones[logwidth]));
   }
 
-  virtual int BDDNodeCountLevel(int lev) {
+  int BDDNodeCountLevel(int lev) {
     return vvIndices[lev].size() - vvRedundantIndices[lev].size();
   }
 
@@ -454,7 +454,7 @@ public:
     return (nNodes++) << 1;
   }
 
-  void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
+  virtual void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
     std::string prefix = outputs.front();
     int nNodes = 1; // const node
     vvIndices.clear();
@@ -626,6 +626,10 @@ public:
   int BDDSwap(int lev) override {
     Swap(lev);
     return BDDNodeCount();
+  }
+
+  void BDDGenerateBlif(std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) override {
+    abort();
   }
 };
 
