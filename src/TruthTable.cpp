@@ -986,10 +986,8 @@ public:
     int r = BDDFind(index, lev);
     if(r >= 0) {
       Merge(vvIndices[lev][r >> 1], index, lev, r & 1);
-      return r;
     }
     if(r >= -2) {
-      Merge(-1, index, lev, r & 1);
       return r;
     }
     vvIndices[lev].push_back(index);
