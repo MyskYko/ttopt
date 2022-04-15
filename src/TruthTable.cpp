@@ -959,10 +959,8 @@ public:
   }
 
   void MergeCare(int index1, int index2, int lev) {
+    assert(index1 >= 0);
     assert(index2 >= 0);
-    if(index1 < 0) {
-      return;
-    }
     int logwidth = nInputs - lev;
     if(logwidth > lww) {
       int nScopeSize = 1 << (logwidth - lww);
@@ -1493,8 +1491,10 @@ public:
     if(r >= -2) {
       if(r >= 0) {
         CopyFuncMasked(r >> 1, index, lev, r & 1);
+        Merge(r >> 1, index, lev, r & 1);
+      } else {
+        vvMergedIndices[lev].push_back({r, index});
       }
-      Merge(r >> 1, index, lev, r & 1);
       return r;
     }
     vvIndices[lev].push_back(index);
@@ -1512,8 +1512,8 @@ public:
     for(auto &p: vvMergedIndices[lev]) {
       if(p.first >= 0) {
         CopyFuncMasked(p.first >> 1, p.second, lev, p.first & 1);
+        MergeCare(p.first >> 1, p.second, lev);
       }
-      MergeCare(p.first >> 1, p.second, lev);
     }
   }
 
