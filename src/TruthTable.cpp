@@ -1201,7 +1201,7 @@ public:
     }
   }
 };
-/*
+
 class TruthTableOSDM : public TruthTableCareReduce {
 public:
   TruthTableOSDM(std::vector<std::vector<int> > const &onsets, int nInputs, std::vector<char *> const &pBPats, int nBPats, int rarity): TruthTableCareReduce(onsets, nInputs, pBPats, nBPats, rarity) {}
@@ -1228,12 +1228,10 @@ public:
 
   int BDDBuildOneNoCare(int index, int lev) {
     int r = BDDFind(index, lev);
-    if(r >= -2) {
-      vvMergedIndices[lev].push_back({r, index});
-      return r;
+    if(r >= 0 && vvIndices[lev][r >> 1] != index) {
+      vvMergedIndices[lev].push_back({(vvIndices[lev][r >> 1] << 1) ^ (r & 1), index});
     }
-    vvIndices[lev].push_back(index);
-    return index << 1;
+    return r;
   }
 
   void BDDBuildLevelNoCare(int lev) {
@@ -1258,12 +1256,12 @@ public:
 
   int BDDRebuild(int lev) override {
     RestoreCare();
-    vvIndices[lev].clear();
-    vvIndices[lev+1].clear();
-    vvMergedIndices[lev].clear();
-    vvMergedIndices[lev+1].clear();
-    for(int i = 0; i < lev + 2; i++) {
-      vmRedundantIndices[i].clear();
+    for(int i = lev; i < lev + 2; i++) {
+      vvIndices[i].clear();
+      vvMergedIndices[i].clear();
+      if(i) {
+        vvChildren[i-1].clear();
+      }
     }
     for(int i = 0; i < lev; i++) {
       BDDRebuildByMerge(i);
@@ -1276,7 +1274,6 @@ public:
           }
         }
       } else {
-        vvChildren[i-1].clear();
         BDDBuildLevel(i);
       }
     }
@@ -1291,27 +1288,12 @@ public:
 
   int BDDSwap(int lev) override {
     for(int i = lev + 2; i < nInputs; i++) {
-      for(int &index: vvChildren[i]) {
-        SwapIndex(index, i - (lev + 2) + 2);
-      }
       for(auto &p: vvMergedIndices[i]) {
         if(p.first >= 0) {
           SwapIndex(p.first, i - (lev + 2) + 1);
         }
         SwapIndex(p.second, i - (lev + 2));
       }
-      std::map<int, std::pair<int, int> > mRedundantIndicesNew;
-      for(auto &p: vmRedundantIndices[i]) {
-        int index = p.first;
-        SwapIndex(index, i - (lev + 2));
-        int i2 = p.second.first;
-        int index2 = p.second.second;
-        if(i2 < nInputs) {
-          SwapIndex(index2, i2 - (lev + 2) + 1);
-        }
-        mRedundantIndicesNew[index] = {i2, index2};
-      }
-      vmRedundantIndices[i] = mRedundantIndicesNew;
     }
     return TruthTable::BDDSwap(lev);
   }
@@ -1385,7 +1367,7 @@ public:
     CompleteMerge();
   }
 };
-
+/*
 class TruthTableTSM : public TruthTableCareReduce {
 public:
   bool fComplTSM;
@@ -1709,8 +1691,8 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableCare tt(onsets, nInputs, pBPats, nBPats, rarity);
-  TruthTableCareReduce tt(onsets, nInputs, pBPats, nBPats, rarity);
-  // TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
+  // TruthTableCareReduce tt(onsets, nInputs, pBPats, nBPats, rarity);
+  TruthTableOSDM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSMNew tt(onsets, nInputs, pBPats, nBPats, rarity);
