@@ -10,29 +10,9 @@
 #include <map>
 #include <bitset>
 #include <unordered_map>
+#include "HashPair.hpp"
 
 extern std::string BinaryToString(int bin, int size);
-
-template <class T>
-inline void hash_combine(std::size_t & seed, const T & v)
-{
-  std::hash<T> hasher;
-  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-namespace std
-{
-  template<typename S, typename T> struct hash<pair<S, T>>
-  {
-    inline size_t operator()(const pair<S, T> & v) const
-    {
-      size_t seed = 0;
-      ::hash_combine(seed, v.first);
-      ::hash_combine(seed, v.second);
-      return seed;
-    }
-  };
-}
 
 class TruthTable {
 public:
@@ -1558,9 +1538,10 @@ void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> co
   // TruthTableOSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   // TruthTableTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
   TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
-  tt.RandomSiftReo(20);
-  tt.Optimize();
-  tt.BDDGenerateBlif(inputs, outputs, f);
+  std::cout << tt.BDDBuild() << std::endl;
+  // tt.RandomSiftReo(20);
+  // tt.Optimize();
+  // tt.BDDGenerateBlif(inputs, outputs, f);
 
   // TruthTableOSM tt1(onsets, nInputs, pBPats, nBPats, rarity, false);
   // int r1 = tt1.RandomSiftReo(20);
