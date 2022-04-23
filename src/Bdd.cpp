@@ -54,6 +54,11 @@ public:
     }
   }
 
+  ~Bdd() {
+    vNodes.clear();
+    delete man;
+  }
+
   word GetValue(int index_lev, int lev) {
     assert(index_lev >= 0);
     assert(nInputs - lev <= lww);
@@ -161,7 +166,7 @@ void BddTest(std::vector<std::vector<int> > const &onsets, std::vector<std::stri
       }
     }
   }
-  m.man->ShuffleHeap(perm);
+  // m.man->ShuffleHeap(perm);
 
-  m.GenerateBlif(inputs, outputs, f);
+  // m.GenerateBlif(inputs, outputs, f);
 }
