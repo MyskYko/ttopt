@@ -1532,9 +1532,11 @@ public:
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
   if(!rarity) {
-    TruthTable tt(onsets, nInputs);
+    TruthTableReo tt(onsets, nInputs);
     tt.RandomSiftReo(20);
-    tt.BDDGenerateBlif(inputs, outputs, f);
+    TruthTable tt2(onsets, nInputs);
+    tt2.Reo(tt.vLevels);
+    tt2.BDDGenerateBlif(inputs, outputs, f);
   } else {
     TruthTableLevelTSM tt(onsets, nInputs, pBPats, nBPats, rarity);
     tt.RandomSiftReo(20);
