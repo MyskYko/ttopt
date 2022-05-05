@@ -11,3 +11,5 @@ do
     f="layer${i}.blif"
     abc -c "read ${dirname}/blif/${f}; mfs2; &get; &if -K 6 -a; &put; write_blif ${dirname}/blifmap/${f}; write_verilog -fm ${dirname}/veropt/${f}.v"
 done
+
+./postsynth.sh $dirname
