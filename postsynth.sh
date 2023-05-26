@@ -1,26 +1,24 @@
-dirname=$1
-if [ -z "$dirname" ]
+f=$1
+if [ -z "$f" ]
 then
-    echo "specify project-dir"
+    echo "specify blif name"
     exit 1
 fi
-l=`ls ${dirname}/blifmap/*`
-f=${dirname}/all.blif
-fnew=${dirname}/all_new.blif
-best=`abc -c "putontop ${l}; sw; write_blif $f; ps" | grep -Po "nd =[ ]*\K[0-9]*"`
-echo $best
+fnew=${f}.new.blif
+best=`abc -c "read_blif $f; ps" | grep -Po "nd =[ ]*\K[0-9]*"`
+#echo $best
 
 new=`abc -c "read $f; mfs2; write_blif $fnew; ps" | grep -Po "nd =[ ]*\K[0-9]*"`
-echo $new
+#echo $new
 
 while (( $new < $best ))
 do
     best=$new
     mv $fnew $f
     new=`abc -c "read $f; if -K 6 -a; mfs2; write_blif $fnew; ps" | grep -Po "nd =[ ]*\K[0-9]*"`
-    echo $new
+#    echo $new
 done
 
 rm $fnew
 
-
+echo $best
