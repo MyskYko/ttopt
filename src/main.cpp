@@ -42,7 +42,7 @@ void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char 
 int main(int argc, char **argv) {
   std::string ifname = argv[1];
   std::string ofname = argv[2];
-  std::string simname = argv[3];
+  std::string simname;// = argv[3];
   int nGroupSize = std::stoi(argv[4]);
   int rarity = std::stoi(argv[5]);
 
