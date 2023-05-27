@@ -6,6 +6,8 @@
 #include <random>
 #include <cassert>
 #include <map>
+
+#ifdef REORDER_WITH_CUDD
 #include <cuddObj.hh>
 
 class Bdd {
@@ -170,3 +172,4 @@ void BddTest(std::vector<std::vector<int> > const &onsets, std::vector<std::stri
 
   // m.GenerateBlif(inputs, outputs, f);
 }
+#endif

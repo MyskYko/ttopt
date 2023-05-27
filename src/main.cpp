@@ -41,16 +41,10 @@ void RunEspresso(std::vector<std::vector<int> > const &onsets, std::vector<char 
 
 int main(int argc, char **argv) {
   std::string ifname = argv[1];
-  std::string ofname = ifname + ".opt.blif";
-  int nGroupSize  = 3;
-  std::string simname;
-  if(argc > 2) {
-    simname = argv[2];
-  }
-  int rarity = 1;
-  if(simname.empty()) {
-    rarity = 0;
-  }
+  std::string ofname = argv[2];
+  std::string simname = argv[3];
+  int nGroupSize = std::stoi(argv[4]);
+  int rarity = std::stoi(argv[5]);
 
   std::ifstream f(ifname);
   std::ofstream of(ofname);
@@ -93,8 +87,11 @@ int main(int argc, char **argv) {
       }
     }
 
+#ifdef REORDER_WITH_CUDD
     BddTest(onsets, LUTInputs, LUTOutputs, of);
-    //TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+#else
+    TTTest(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
+#endif
     //RunEspresso(onsets, vpBPatsSubset, nBPats, rarity, LUTInputs, LUTOutputs, of);
   }
 

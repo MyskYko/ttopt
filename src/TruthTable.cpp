@@ -1531,8 +1531,11 @@ public:
 
 void TTTest(std::vector<std::vector<int> > const &onsets, std::vector<char *> const &pBPats, int nBPats, int rarity, std::vector<std::string> const &inputs, std::vector<std::string> const &outputs, std::ofstream &f) {
   int nInputs = inputs.size();
-  // TruthTable tt(onsets, nInputs);
+#ifdef SWAP_TABLE
+  TruthTable tt(onsets, nInputs);
+#else
   TruthTableReo tt(onsets, nInputs);
+#endif
   tt.RandomSiftReo(20);
   // tt.BDDGenerateBlif(inputs, outputs, f);
 
