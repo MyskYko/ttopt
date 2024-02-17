@@ -7,6 +7,7 @@ fi
 mkdir "${dirname}/blif"
 mkdir "${dirname}/blifopt"
 mkdir "${dirname}/blifmap"
+mkdir "${dirname}/blifpart"
 mkdir "${dirname}/veropt"
 python3 conv.py $dirname
 abc -c "&lnetread ${dirname}/train_input.txt ${dirname}/train0.sim; &lnetread ${dirname}/test_input.txt  ${dirname}/test.sim"
