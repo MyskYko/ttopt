@@ -8,7 +8,7 @@ cp ${dirname}/blifpart/layer${i}.blif ${dirname}/blifopt/.
 cp ${dirname}/blifpart/layer${i}_*.blif ${dirname}/blifopt/.
 for j in `seq 0 $(($npart - 1))`
 do
-    timeout 5m ./fbdd ${dirname}/blifopt/layer${i}_${j}.blif > ${dirname}/blifopt/layer${i}_${j}.log
+    timeout 1m ./fbdd ${dirname}/blifopt/layer${i}_${j}.blif > ${dirname}/blifopt/layer${i}_${j}.log
     if [ -e ${dirname}/blifopt/layer${i}_${j}_opt.blif ]
     then
         python3 fixblif.py ${dirname}/blifopt/layer${i}_${j}_opt.blif ${dirname}/blifopt/layer${i}_${j}_fixed.blif
